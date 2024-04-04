@@ -1,6 +1,6 @@
 import csv
 import numpy as np
-
+from scipy import stats
 
 def get_spikes(
     csv_path,
@@ -22,14 +22,14 @@ def get_spikes(
         Each entry is a np.ndarray[int]
     """
 
-    (spike_times, spike_labels) = read_spikesorter_csv(csv_path, sampling_frequency)
+    (spike_times, spike_labels, max_channel) = read_spikesorter_csv(csv_path, sampling_frequency)
 
     neuron_ids = np.unique(spike_labels)
 
     spike_times_for_each_neuron = []
 
-    for id in neuron_ids:
-        spike_times_for_each_neuron.append(spike_times[spike_labels == id])
+    for neuron_id in neuron_ids:
+        spike_times_for_each_neuron.append(spike_times[spike_labels == neuron_id])
 
     return spike_times_for_each_neuron
 
@@ -59,6 +59,8 @@ def read_spikesorter_csv(
         spike times in units of ticks (1 index per sampling period)
     np.ndarray[int]
         unit ID
+    np.ndarray[int]:
+        maximum channel ID for corresponding unit
     """
 
     unit_list = []
@@ -73,9 +75,29 @@ def read_spikesorter_csv(
     spike_times = np.zeros(len(unit_list), dtype=int)
 
     spike_labels = np.zeros(len(unit_list), dtype=int)
+    max_channel = np.zeros(len(unit_list), dtype=int)
 
     for i in range(len(unit_list)):
         spike_times[i] = float(unit_list[i][0]) * sampling_frequency
         spike_labels[i] = unit_list[i][1]
+        max_channel[i] = unit_list[i][2]
 
-    return spike_times, spike_labels
+    return spike_times, spike_labels, max_channel
+
+
+def read_best_channel(csv_path, sampling_frequency):
+
+    spike_times, spike_labels, max_channel = read_spikesorter_csv(
+        csv_path,
+        sampling_frequency,
+    )
+
+    neuron_ids = np.unique(spike_labels)
+
+    best_channel = []
+
+    for neuron_id in neuron_ids:
+
+        best_channel.append(stats.mode(max_channel[spike_labels == neuron_id])[0][0])
+
+    return best_channel
