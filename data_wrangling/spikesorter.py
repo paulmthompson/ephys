@@ -86,6 +86,20 @@ def read_spikesorter_csv(
 
 
 def read_best_channel(csv_path, sampling_frequency):
+    """
+
+    Returns the highest SNR channel for each unique unit in the csv file
+
+    Parameters
+    ----------
+    csv_path: string
+    sampling_frequency: float
+
+    Returns
+    -------
+    list:
+        highest SNR channel for each unique unit in the csv
+    """
 
     spike_times, spike_labels, max_channel = read_spikesorter_csv(
         csv_path,
