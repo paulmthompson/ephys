@@ -1,0 +1,25 @@
+project:
+  type: website
+  output-dir: .
+
+website:
+  title: "Electrophysiology"
+  sidebar:
+    style: docked
+    contents:
+      - section: "Introduction"
+        contents: 
+        - index.qmd
+        
+      - section: "Data Wrangling"
+        contents:
+        - data_wrangling/intan.qmd
+
+format:
+  html:
+    theme: cosmo
+    css: styles.css
+    toc: true
+
+editor: visual
+
