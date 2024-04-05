@@ -1,6 +1,6 @@
 import numpy as np
 
-import binary_data
+from data_wrangling import binary_data
 from data_wrangling.ttls import find_high_ttls_at_single_channel
 
 
