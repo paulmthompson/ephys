@@ -1,7 +1,7 @@
 import numpy as np
 
-from data_wrangling import binary_data
-from data_wrangling.ttls import find_high_ttls_at_single_channel
+from .binary_data import get_digital
+from .ttls import find_high_ttls_at_single_channel
 
 
 def get_camera_ttl_array(intan_digital_filepath, ttl_index=1):
@@ -21,7 +21,7 @@ def get_camera_ttl_array(intan_digital_filepath, ttl_index=1):
     np.ndarray[int]:
         Time (in ticks) where ttl at index transitions from low to high
     """
-    digital_inputs = binary_data.get_digital(
+    digital_inputs = get_digital(
         intan_digital_filepath,
         0,
         2,
