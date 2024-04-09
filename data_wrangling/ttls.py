@@ -9,7 +9,7 @@ def get_ttl_timestamps(digital_inputs, ttl_index):
 
     lowToHighTimestamps = get_low_to_high_transition_timestamps(ttl_boolean)
 
-    highToLowTimestamps = get_low_to_high_transition_timestamps(ttl_boolean)
+    highToLowTimestamps = get_high_to_low_transition_timestamps(ttl_boolean)
 
     if isTransitionLowToHigh:
         return match_ttl_timestamps(lowToHighTimestamps, highToLowTimestamps)
