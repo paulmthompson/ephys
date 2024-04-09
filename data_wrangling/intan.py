@@ -1,7 +1,7 @@
 import numpy as np
 
 from .binary_data import get_digital
-from .ttls import find_high_ttls_at_single_channel
+from .ttls import get_ttl_timestamps
 
 
 def get_camera_ttl_array(intan_digital_filepath, ttl_index=1):
@@ -27,11 +27,9 @@ def get_camera_ttl_array(intan_digital_filepath, ttl_index=1):
         2,
     )
 
-    ttl_boolean = find_high_ttls_at_single_channel(digital_inputs, ttl_index)
+    ttl_onsets, ttl_offsets = get_ttl_timestamps(digital_inputs, ttl_index)
 
-    ttl_boolean_diff = np.ediff1d(ttl_boolean)
-    ttl_ticks = np.where(ttl_boolean_diff > 0)[0] - 1
-    return ttl_ticks
+    return ttl_onsets
 
 
 def load_voltage(voltage_filepath, channel_count):
