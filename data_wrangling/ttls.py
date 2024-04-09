@@ -38,7 +38,7 @@ def match_ttl_timestamps(
         )
         t1_offset = 1
 
-    t2_offset = 0
+    t2_offset = None
     if transition_2_timestamps[-1] < transition_2_timestamps[-1]:
         print(
             "The last event appears to have no matching end transition "
