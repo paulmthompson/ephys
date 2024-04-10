@@ -1,9 +1,20 @@
 import numpy as np
 
 
-def get_ttl_timestamps(digital_inputs, ttl_index):
+def get_ttl_timestamps_16bit(digital_inputs, ttl_index):
+    """
 
-    ttl_boolean = find_high_ttls_at_single_channel(digital_inputs, ttl_index)
+    Parameters
+    ----------
+    digital_inputs
+    ttl_index
+
+    Returns
+    -------
+
+    """
+
+    ttl_boolean = find_ttls_on_single_channel_16bit(digital_inputs, ttl_index)
 
     isTransitionLowToHigh = is_ttl_transition_low_to_high(ttl_boolean)
 
@@ -21,6 +32,26 @@ def match_ttl_timestamps(
     transition_1_timestamps,
     transition_2_timestamps,
 ):
+    """
+
+    Parameters
+    ----------
+    transition_1_timestamps: np.ndarray[int]
+        These are the timestamps for the start of
+        each event
+    transition_2_timestamps: np.ndarray[int]
+        These are the timestamps for the end of
+        each event
+
+    Returns
+    -------
+    np.ndarray[int]:
+        Timestamps for the start of each event, adjusted so
+        that each has a matching off timestamp
+    np.ndarray[int]
+        Timestamps for the end of each event, adjusted so
+        that each has a matching on timestamp
+    """
 
     num_transition_1 = len(transition_1_timestamps)
     num_transition_2 = len(transition_2_timestamps)
@@ -53,10 +84,16 @@ def match_ttl_timestamps(
     return transition_1_timestamps[t1_offset:], transition_2_timestamps[:t2_offset]
 
 
-
-def find_high_ttls_at_single_channel(digital_inputs, ttl_index):
+def find_ttls_on_single_channel_16bit(digital_inputs, ttl_index):
     """
 
+    TTL signals from multiple channels are generally packed
+    together in a single binary number, where each 0 or 1
+    corresponds to a single channel being high or low.
+
+    This function is used when the digital inputs are packed
+    together in a 16-bit number; consequently there can be
+    16 possible TTL channels for each sample.
 
 
     Parameters
@@ -71,9 +108,8 @@ def find_high_ttls_at_single_channel(digital_inputs, ttl_index):
 
     """
 
-    # ERROR CHECKING
-    # Make sure ttl_index is not larger than number of bits in digital input
-    # type (does this matter if python doesn't care so much about types?)
+    if (ttl_index < 0) or (ttl_index > 15):
+        raise ValueError("TTL index must be between 0 and 15")
 
     binary_ttl_mask = 2**ttl_index
     ttl_boolean = ((digital_inputs & binary_ttl_mask) > 0).astype(int)
@@ -84,13 +120,26 @@ def find_high_ttls_at_single_channel(digital_inputs, ttl_index):
 def is_ttl_transition_low_to_high(ttl_boolean):
     """
 
+    Depending on the configuration of the attached electronics,
+    a TTL input may rest in the high state, and temporarily
+    transition to the low state during an event, or vice versa.
+
+    This method assumes that the rest state is the one where
+    the input most often resides (e.g. if the input is usually high,
+    then high to low transitions signal events).
+
     Parameters
     ----------
-    ttl_boolean
+    ttl_boolean: np.ndarray[int]
+        Array of samples from single ttl channel.
+        0 represents low and 1 represents high
 
     Returns
     -------
-
+    bool:
+        True indicates that this TTL input
+        is most likely configured for inputs that are
+        low to high
     """
 
     total_high_ttl = np.count_nonzero(ttl_boolean)
@@ -107,6 +156,20 @@ def is_ttl_transition_low_to_high(ttl_boolean):
 
 
 def get_low_to_high_transition_timestamps(ttl_boolean):
+    """
+
+    Parameters
+    ----------
+    ttl_boolean: np.ndarray[int]
+        Array of samples from single ttl channel.
+        0 represents low and 1 represents high
+
+    Returns
+    -------
+    np.ndarray[int]:
+        Time stamps (in index values) of transitions
+        between low and high values
+    """
 
     # ERROR CHECKING
     # Values not equal to 0 and 1
@@ -118,6 +181,20 @@ def get_low_to_high_transition_timestamps(ttl_boolean):
 
 
 def get_high_to_low_transition_timestamps(ttl_boolean):
+    """
+
+    Parameters
+    ----------
+    ttl_boolean: np.ndarray[int]
+        Array of samples from single ttl channel.
+        0 represents low and 1 represents high
+
+    Returns
+    -------
+    np.ndarray[int]:
+        Time stamps (in index values) of transitions
+        between high and low values
+    """
 
     # ERROR CHECKING
     # Values not equal to 0 and 1

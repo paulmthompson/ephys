@@ -1,7 +1,7 @@
 import numpy as np
 
 from .binary_data import get_digital
-from .ttls import get_ttl_timestamps
+from .ttls import get_ttl_timestamps_16bit
 
 
 def get_camera_ttl_array(intan_digital_filepath, ttl_index=1):
@@ -27,7 +27,7 @@ def get_camera_ttl_array(intan_digital_filepath, ttl_index=1):
         2,
     )
 
-    ttl_onsets, ttl_offsets = get_ttl_timestamps(digital_inputs, ttl_index)
+    ttl_onsets, ttl_offsets = get_ttl_timestamps_16bit(digital_inputs, ttl_index)
 
     return ttl_onsets
 
