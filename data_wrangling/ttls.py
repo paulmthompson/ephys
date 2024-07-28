@@ -1,22 +1,37 @@
 import numpy as np
 
 
-def get_ttl_timestamps_16bit(digital_inputs, ttl_index):
+def get_ttl_timestamps_16bit(
+    digital_inputs,
+    ttl_index,
+    isTransitionLowToHigh=None,
+):
     """
 
     Parameters
     ----------
-    digital_inputs
-    ttl_index
-
+    digital_inputs: np.ndarray[np.uint16]
+        Single 16-bit number representing 16-bit digital inputs for each sample
+    ttl_index: int
+        zero based index (0-15). This is the index of the TTL
+        channel that we are interested in
+    isTransitionLowToHigh: bool or None
+        If None, the function will attempt to determine
+        the transition type from the data
     Returns
     -------
-
+    np.ndarray[int]:
+        Timestamps for the start of each event, adjusted so
+        that each has a matching off timestamp
+    np.ndarray[int]
+        Timestamps for the end of each event, adjusted so
+        that each has a matching on timestamp
     """
 
     ttl_boolean = find_ttls_on_single_channel_16bit(digital_inputs, ttl_index)
 
-    isTransitionLowToHigh = is_ttl_transition_low_to_high(ttl_boolean)
+    if isTransitionLowToHigh is None:
+        isTransitionLowToHigh = is_ttl_transition_low_to_high(ttl_boolean)
 
     lowToHighTimestamps = get_low_to_high_transition_timestamps(ttl_boolean)
 
@@ -77,7 +92,9 @@ def match_ttl_timestamps(
         )
         t2_offset = -1
 
-    transition_durations = transition_2_timestamps[:t2_offset] - transition_1_timestamps[t1_offset:]
+    transition_durations = (
+        transition_2_timestamps[:t2_offset] - transition_1_timestamps[t1_offset:]
+    )
 
     print(f"The TTL duration appears to be {np.median(transition_durations)} samples")
 
