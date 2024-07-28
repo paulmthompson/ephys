@@ -1,5 +1,7 @@
 import pytest
 
+from data_wrangling.ttls import get_high_to_low_transition_timestamps
+from data_wrangling.ttls import get_low_to_high_transition_timestamps
 from data_wrangling.ttls import get_ttl_timestamps_16bit
 
 import numpy as np
@@ -30,10 +32,6 @@ def generate_digital_inputs_with_transitions(length, transitions):
     return digital_inputs
 
 
-import pytest
-from data_wrangling.ttls import get_ttl_timestamps_16bit
-
-
 def test_get_low_to_high_transition_timestamps():
     # Generate digital inputs with transitions
     length = 100
@@ -46,16 +44,36 @@ def test_get_low_to_high_transition_timestamps():
     digital_inputs = generate_digital_inputs_with_transitions(length, transitions)
 
     # Test the function
-    ttl_index = 0
-    ttl_onsets, ttl_offsets = get_ttl_timestamps_16bit(digital_inputs, ttl_index)
+    ttl_onsets = get_low_to_high_transition_timestamps(digital_inputs)
 
     # Expected results
     expected_onsets = np.array([10, 30])
-    expected_offsets = np.array([20, 40])
 
     assert np.array_equal(
         ttl_onsets, expected_onsets
     ), f"Expected {expected_onsets}, but got {ttl_onsets}"
+
+
+def test_get_high_to_low_transition_timestamps():
+    # Generate digital inputs with transitions
+    length = 100
+    transitions = [
+        (10, "low_to_high"),
+        (20, "high_to_low"),
+        (30, "low_to_high"),
+        (40, "high_to_low"),
+    ]
+    digital_inputs = generate_digital_inputs_with_transitions(length, transitions)
+
+    # Test the function
+    ttl_offsets = get_high_to_low_transition_timestamps(digital_inputs)
+
+    # Expected results
+    expected_offsets = np.array([20, 40])
+
+    assert np.array_equal(
+        ttl_offsets, expected_offsets
+    ), f"Expected {expected_offsets}, but got {ttl_offsets}"
 
 
 def test_get_ttl_timestamps_16bit():
