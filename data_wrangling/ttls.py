@@ -188,11 +188,11 @@ def get_low_to_high_transition_timestamps(ttl_boolean):
         between low and high values
     """
 
-    # ERROR CHECKING
-    # Values not equal to 0 and 1
+    if not np.all(np.isin(ttl_boolean, [0, 1])):
+        raise ValueError("ttl_boolean array must contain only 0 and 1 values")
 
     ttl_boolean_diff = np.ediff1d(ttl_boolean)
-    ttl_ticks = np.where(ttl_boolean_diff > 0)[0] - 1
+    ttl_ticks = np.where(ttl_boolean_diff > 0)[0] + 1
 
     return ttl_ticks
 
@@ -213,10 +213,10 @@ def get_high_to_low_transition_timestamps(ttl_boolean):
         between high and low values
     """
 
-    # ERROR CHECKING
-    # Values not equal to 0 and 1
+    if not np.all(np.isin(ttl_boolean, [0, 1])):
+        raise ValueError("ttl_boolean array must contain only 0 and 1 values")
 
     ttl_boolean_diff = np.ediff1d(ttl_boolean)
-    ttl_ticks = np.where(ttl_boolean_diff < 0)[0] - 1
+    ttl_ticks = np.where(ttl_boolean_diff < 0)[0] + 1
 
     return ttl_ticks
