@@ -22,16 +22,16 @@ def get_digital(
         Array of digital inputs
     """
 
-    match single_sample_size_in_bytes:
-        case 1:
-            d_type = np.uint8
-        case 2:
-            d_type = np.uint16
-        case _:
-            raise ValueError(
-                "Unsupported digital input byte size. Are \
-                             you sure that you have more than 16 channels?"
-            )
+    # match statement introduced in 3.10
+    if single_sample_size_in_bytes == 1:
+        d_type = np.uint8
+    elif single_sample_size_in_bytes == 2:
+        d_type = np.uint16
+    else:
+        raise ValueError(
+            "Unsupported digital input byte size. Are \
+                you sure that you have more than 16 channels?"
+        )
 
     digital_inputs = np.fromfile(
         filepath,
