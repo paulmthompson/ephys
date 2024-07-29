@@ -1,6 +1,34 @@
 import numpy as np
 
 
+def find_index_of_ttl_event_from_another(ttl_events_1, ttl_events_2,):
+    """
+    This function will find the closest index of each ttl event in ttl_events_1
+    for each event in ttl_events_2.
+
+    This function is useful for example if you recorded camera frames with ttl_events_1,
+    and some experimental event with ttl_events_2, and you want to know which camera frame
+    corresponds to each experimental event.
+
+    Parameters
+    ----------
+    ttl_events_1
+    ttl_events_2
+
+    Returns
+    -------
+
+    """
+
+    output_event_indices = []
+    for event in ttl_events_2:
+        closest_index = np.argmin(np.abs(ttl_events_1 - event))
+        output_event_indices.append(closest_index)
+
+    return output_event_indices
+
+
+
 def get_ttl_timestamps_16bit(
     digital_inputs,
     ttl_index,
