@@ -3,9 +3,10 @@ import pytest
 from data_wrangling.intan import get_camera_ttl_array
 
 
-def test_get_camera_ttl_array():
+def test_get_camera_ttl_array(pytestconfig):
 
-    intan_digital_filepath = "data/digitalin.dat"
+    data_dir_path = pytestconfig.getoption("dirpath")
+    intan_digital_filepath = f"{data_dir_path}/digitalin.dat"
     ttl_index = 0
 
     ttl_onsets, ttl_offsets = get_camera_ttl_array(

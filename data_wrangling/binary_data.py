@@ -11,14 +11,15 @@ def get_digital(
     Parameters
     ----------
     filepath: string
+        Path to the binary data file
     header_offset_in_bytes: int
         Binary data file may have header information
-    single_sample_size_in_bytes:int
-
+    single_sample_size_in_bytes: int
+        Size of a single sample in bytes
     Returns
     -------
     np.ndarray
-
+        Array of digital inputs
     """
 
     match single_sample_size_in_bytes:
