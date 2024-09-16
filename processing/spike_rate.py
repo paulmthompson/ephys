@@ -108,6 +108,8 @@ def bootstrap_ci(
         **kwargs,
     )
 
+    trial_histograms = np.array(trial_histograms)
+
     for i in range(n_bootstrap):
         resampled_indices = np.random.choice(n_trials, n_trials, replace=True)
         resampled_histograms = trial_histograms[resampled_indices]
