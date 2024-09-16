@@ -3,11 +3,11 @@ from scipy.ndimage import gaussian_filter1d
 
 
 def calculate_per_trial_spike_counts(
-        spikes_per_trial,
-        bins,
-        smooth=False,
-        sigma=2.0,
-    ):
+    spikes_per_trial,
+    bins,
+    smooth=False,
+    sigma=2.0,
+):
     """
 
     Parameters
@@ -30,6 +30,50 @@ def calculate_per_trial_spike_counts(
         trial_histograms.append(hist)
 
     return trial_histograms
+
+
+def calculate_spike_rate(
+    trial_histograms,
+    bins,
+    event_off_s=None,
+):
+    """
+
+    Parameters
+    ----------
+    trial_histograms: list
+        count of spikes in each time bin for each trial.
+    bins: np.ndarray
+        the bin edges for histogram calculation.
+    event_off_s:
+        the time when the event ends. If provided, the spike rate will be calculated
+        by dividing the number of spikes by the number of trials in each bin.
+
+    Returns
+    -------
+    np.ndarray
+        the mean spike rate in each bin.
+    """
+
+    bin_width_s = bins[1] - bins[0]
+
+    if event_off_s is not None:
+        remove_spike_events = True
+    else:
+        remove_spike_events = False
+
+    trial_histograms = np.array(trial_histograms)
+
+    hist = np.sum(trial_histograms, axis=0)
+    if remove_spike_events:
+        num_trials_per_bin = np.zeros(bins.shape[0] - 1)
+        for i in range(len(bins) - 1):
+            num_trials_per_bin[i] = np.sum(event_off_s >= bins[i])
+        spike_rate = hist / num_trials_per_bin / bin_width_s
+    else:
+        spike_rate = hist / bin_width_s / len(trial_histograms)
+
+    return spike_rate
 
 
 def bootstrap_ci(
