@@ -1,5 +1,35 @@
-
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
+
+
+def calculate_per_trial_spike_counts(
+        spikes_per_trial,
+        bins,
+        smooth=False,
+        sigma=2.0,
+    ):
+    """
+
+    Parameters
+    ----------
+    spikes_per_trial
+    bins
+    smooth
+    sigma
+
+    Returns
+    -------
+
+    """
+
+    trial_histograms = []
+    for trial_spike_times in spikes_per_trial:
+        hist, _ = np.histogram(trial_spike_times, bins=bins)
+        if smooth:
+            hist = gaussian_filter1d(hist.astype(float), sigma=sigma)
+        trial_histograms.append(hist)
+
+    return trial_histograms
 
 
 def bootstrap_ci(
@@ -7,6 +37,7 @@ def bootstrap_ci(
     bins,
     n_bootstrap=10000,
     ci_percentile=95,
+    **kwargs,
 ):
     """
     Calculate the confidence interval of a spike rate using bootstrap resampling.
@@ -16,6 +47,7 @@ def bootstrap_ci(
     - bins: array-like, the bin edges for histogram calculation.
     - n_bootstrap: int, number of bootstrap samples.
     - ci_percentile: float, the percentile for the confidence interval.
+    - **kwargs: additional keyword arguments for calculate_per_trial_spike_counts.
 
     Returns:
     - ci_lower: array, the lower bound of the confidence interval for each bin.
@@ -26,9 +58,10 @@ def bootstrap_ci(
     bin_width = bins[1] - bins[0]
     bootstrap_means = np.zeros((n_bootstrap, len(bin_centers)))
 
-    # Precompute histograms for all trials
-    trial_histograms = np.array(
-        [np.histogram(trial, bins=bins)[0] for trial in spikes_per_trial]
+    trial_histograms = calculate_per_trial_spike_counts(
+        spikes_per_trial,
+        bins,
+        **kwargs,
     )
 
     for i in range(n_bootstrap):
