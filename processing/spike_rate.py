@@ -36,6 +36,7 @@ def calculate_spike_rate(
     trial_histograms,
     bins,
     event_off_s=None,
+    return_probabilty=False,
 ):
     """
 
@@ -48,14 +49,14 @@ def calculate_spike_rate(
     event_off_s:
         the time when the event ends. If provided, the spike rate will be calculated
         by dividing the number of spikes by the number of trials in each bin.
+    return_probabilty: bool
+        if True, return the probability of spiking in each bin rather than the spike rate.
 
     Returns
     -------
     np.ndarray
         the mean spike rate in each bin.
     """
-
-    bin_width_s = bins[1] - bins[0]
 
     if event_off_s is not None:
         remove_spike_events = True
@@ -69,9 +70,13 @@ def calculate_spike_rate(
         num_trials_per_bin = np.zeros(bins.shape[0] - 1)
         for i in range(len(bins) - 1):
             num_trials_per_bin[i] = np.sum(event_off_s >= bins[i])
-        spike_rate = hist / num_trials_per_bin / bin_width_s
+        spike_rate = hist / num_trials_per_bin
     else:
-        spike_rate = hist / bin_width_s / len(trial_histograms)
+        spike_rate = hist / len(trial_histograms)
+
+    if not return_probabilty:
+        bin_width_s = bins[1] - bins[0]
+        spike_rate /= bin_width_s
 
     return spike_rate
 
