@@ -58,8 +58,14 @@ def get_ttl_timestamps_16bit(
 
     ttl_boolean = find_ttls_on_single_channel_16bit(digital_inputs, ttl_index)
 
+    transition_guess = is_ttl_transition_low_to_high(ttl_boolean)
+
     if isTransitionLowToHigh is None:
-        isTransitionLowToHigh = is_ttl_transition_low_to_high(ttl_boolean)
+        isTransitionLowToHigh = transition_guess
+    elif isTransitionLowToHigh != transition_guess:
+        print("Warning: isTransitionLowToHigh does not match the data")
+        print("Transition guess: ", transition_guess)
+        print("isTransitionLowToHigh: ", isTransitionLowToHigh)
 
     lowToHighTimestamps = get_low_to_high_transition_timestamps(ttl_boolean)
 
@@ -104,21 +110,23 @@ def match_ttl_timestamps(
         print("Transition 1 timestamps: " + str(num_transition_1))
         print("Transition 2 timestamps: " + str(num_transition_2))
 
-    t1_offset = 0
-    if transition_1_timestamps[0] > transition_2_timestamps[0]:
+    if num_transition_1 > num_transition_2:
         print(
-            "The first event appears to be the end of a transition. \
-              This means that the first event was mostly likely cut off"
+            "The first event appears to be the end of a transition. "
+            "This means that the first event was mostly likely cut off"
         )
         t1_offset = 1
-
-    t2_offset = None
-    if transition_2_timestamps[-1] < transition_2_timestamps[-1]:
+        t2_offset = None
+    elif num_transition_2 > num_transition_1:
         print(
             "The last event appears to have no matching end transition "
             "This means the last event was most likely cut off"
         )
+        t1_offset = 0
         t2_offset = -1
+    else:
+        t1_offset = 0
+        t2_offset = None
 
     transition_durations = (
         transition_2_timestamps[:t2_offset] - transition_1_timestamps[t1_offset:]

@@ -59,6 +59,8 @@ def load_voltage(voltage_filepath, channel_count):
 
     """
     voltage = np.fromfile(voltage_filepath, dtype=np.int16)
-    voltage = voltage.reshape(channel_count, int(voltage.shape[0] / channel_count))
-    voltage_uV = voltage * 0.195
+    voltage = voltage.reshape(int(voltage.shape[0] / channel_count), channel_count)
+
+    # Convert to uV as float32
+    voltage_uV = voltage.astype(np.float32) * 0.195
     return voltage_uV
