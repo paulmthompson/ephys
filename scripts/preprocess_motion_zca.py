@@ -11,50 +11,11 @@ if project_root not in sys.path:
 
 from ephys.data_wrangling import intan
 from ephys.processing.zca import apply_zca_whitening
+from ephys.probes import get_probe
 
 import spikeinterface.extractors as se
 from spikeinterface.preprocessing import correct_motion
 from spikeinterface.sortingcomponents.motion import interpolate_motion
-import probeinterface
-from probeinterface import Probe
-
-
-def get_32ch_probe():
-    """Returns the hardcoded 32-channel probe used for motion correction."""
-    n = 32
-    positions = np.zeros((n, 2))
-
-    height = 300
-    for i in range(10):
-        positions[i] = -21.65, height
-        height += 50
-        
-    height = 250
-    for i in range(10, 16):
-        positions[i] = -21.65, height
-        height -= 50
-
-    height = 25
-    for i in range(16, 22):
-        positions[i] = 21.65, height
-        height += 50
-        
-    height = 25 + 15*50
-    for i in range(22, 32):
-        positions[i] = 21.65, height
-        height -= 50
-
-    probe = Probe(ndim=2, si_units='um')
-    probe.set_contacts(positions=positions, shapes='circle', shape_params={'radius': 7.5})
-
-    probeinterface.wiring.pathways['A32>RHD2132'] = [
-        30,26,21,17,27,22,20,25,28,23,19,24,29,18,31,16,
-        0,15,2,13,8,9,7,1,6,14,10,11,5,12,4,3
-    ]
-    probe.wiring_to_device('A32>RHD2132')
-    return probe
-
-
 def preprocess_motion_zca(
     input_filepath,
     output_filepath,
@@ -65,13 +26,20 @@ def preprocess_motion_zca(
     epsilon=0.1,
     motion_preset="dredge",
     border_mode="force_zeros",
-    spatial_interpolation_method="kriging"
+    spatial_interpolation_method="kriging",
+    probe_type="poly2",
+    dead_channels=None
 ):
     """
     Advanced preprocessing pipeline incorporating motion correction and ZCA whitening.
     Branch 1: Estimates motion using a CMR filter.
     Branch 2: Applies ZCA spatial whitening to raw bandpassed data, then interpolates motion.
     """
+    if dead_channels is None:
+        dead_channels = []
+        
+    good_channels = [ch for ch in range(channel_count) if ch not in dead_channels]
+
     print(f"Loading data from {input_filepath}...")
     voltage_uV = intan.load_voltage(str(input_filepath), channel_count)
     voltage_uV = np.swapaxes(voltage_uV, 0, 1)
@@ -81,16 +49,16 @@ def preprocess_motion_zca(
     sos = butter(3, [lowcut / nyq, highcut / nyq], btype='band', output='sos')
     voltage_uV_filtered = sosfiltfilt(sos, voltage_uV, axis=1)
 
-    print("Applying CMR filter for motion estimation branch...")
-    cmr_median = np.median(voltage_uV_filtered, axis=0)
+    print("Applying CMR filter for motion estimation branch (excluding dead channels)...")
+    cmr_median = np.median(voltage_uV_filtered[good_channels, :], axis=0)
     voltage_uV_cmr = voltage_uV_filtered - cmr_median
 
-    print("Setting up SpikeInterface recording for motion estimation...")
+    print(f"Setting up SpikeInterface recording for motion estimation (Probe: {probe_type})...")
     recording_cmr = se.NumpyRecording(
         traces_list=voltage_uV_cmr.transpose(),
         sampling_frequency=sampling_rate_hz
     )
-    probe = get_32ch_probe()
+    probe = get_probe(probe_type)
     recording_cmr = recording_cmr.set_probe(probe)
 
     print(f"Estimating motion vectors using preset '{motion_preset}'...")
@@ -101,9 +69,10 @@ def preprocess_motion_zca(
         output_motion_info=True
     )
 
-    print("Applying robust ZCA whitening to bandpass filtered data...")
-    voltage_uV_zca = apply_zca_whitening(
-        voltage_uV_filtered, 
+    print("Applying robust ZCA whitening to bandpass filtered data (excluding dead channels)...")
+    voltage_uV_zca = voltage_uV_filtered.copy()
+    voltage_uV_zca[good_channels, :] = apply_zca_whitening(
+        voltage_uV_filtered[good_channels, :], 
         epsilon=epsilon, 
         rescale_amplitude=True,
         robust_cov=True
@@ -147,6 +116,8 @@ if __name__ == "__main__":
     parser.add_argument("--motion_preset", type=str, default="dredge", help="Motion estimation preset")
     parser.add_argument("--border_mode", type=str, default="force_zeros", help="Border mode for interpolation")
     parser.add_argument("--spatial_interpolation_method", type=str, default="kriging", help="Spatial interpolation method")
+    parser.add_argument("--probe_type", type=str, default="poly2", choices=["poly2", "poly3"], help="Probe geometry layout")
+    parser.add_argument("--dead_channels", type=int, nargs="*", default=None, help="List of channel indices to exclude")
 
     args = parser.parse_args()
 
@@ -160,5 +131,7 @@ if __name__ == "__main__":
         epsilon=args.epsilon,
         motion_preset=args.motion_preset,
         border_mode=args.border_mode,
-        spatial_interpolation_method=args.spatial_interpolation_method
+        spatial_interpolation_method=args.spatial_interpolation_method,
+        probe_type=args.probe_type,
+        dead_channels=args.dead_channels
     )
