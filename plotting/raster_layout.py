@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from processing.spike_align import (
+from ephys.processing.spike_align import (
     apply_trial_order,
     sort_order_by_first_spike,
 )
