@@ -70,13 +70,25 @@ def spikes_relative_to_events_ticks(
         times in seconds for spikes in the window around ``event_ticks[i]``
         (possibly length 0).
 
+    Raises
+    ------
+    ValueError:
+        If ``sampling_rate_hz`` or ``win_ticks`` is not positive.
+
     Notes
     -----
     Window membership uses ``searchsorted`` on sorted spike ticks; boundary
     behavior matches half-open ``[lo, hi)`` sampling in index space.
     """
-    spike_times_ticks = np.asarray(spike_times_ticks, dtype=np.int64).ravel()
-    spike_times_ticks.sort()
+    if sampling_rate_hz <= 0:
+        raise ValueError("sampling_rate_hz must be positive")
+    if win_ticks <= 0:
+        raise ValueError("win_ticks must be positive")
+
+    spike_times_ticks = np.sort(
+        np.asarray(spike_times_ticks, dtype=np.int64).ravel(),
+        kind="mergesort",
+    )
 
     rel_per_trial: list[np.ndarray] = []
     half = int(win_ticks)
@@ -121,6 +133,11 @@ def event_ticks_greedy_non_overlapping_half_windows(
         ``int64`` 1D, strictly non-decreasing kept onsets. Empty if the input
         is empty.
 
+    Raises
+    ------
+    ValueError:
+        If ``win_ticks`` is not positive.
+
     Notes
     -----
     This **drops trials** (onsets), not spikes within a trial. After filtering,
@@ -130,6 +147,9 @@ def event_ticks_greedy_non_overlapping_half_windows(
     Greedy earliest-first scheduling maximizes the number of kept trials among
     equal-length windows on a line.
     """
+    if win_ticks <= 0:
+        raise ValueError("win_ticks must be positive")
+
     events = np.asarray(event_ticks, dtype=np.int64).ravel()
     if events.size == 0:
         return np.empty(0, dtype=np.int64)
@@ -177,8 +197,8 @@ def sort_order_by_first_spike(
         if a.size > 0:
             first_s[i] = float(np.min(a))
         else:
-            first_s[i] = -np.inf
-    return np.argsort(first_s)
+            first_s[i] = np.inf
+    return np.argsort(first_s, kind="mergesort")
 
 
 def sort_order_by_spike_count_descending(
