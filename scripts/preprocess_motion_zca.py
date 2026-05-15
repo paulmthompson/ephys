@@ -28,7 +28,7 @@ def get_32ch_probe():
     for i in range(10):
         positions[i] = -21.65, height
         height += 50
-        
+
     height = 250
     for i in range(10, 16):
         positions[i] = -21.65, height
@@ -38,7 +38,7 @@ def get_32ch_probe():
     for i in range(16, 22):
         positions[i] = 21.65, height
         height += 50
-        
+
     height = 25 + 15*50
     for i in range(22, 32):
         positions[i] = 21.65, height
@@ -95,16 +95,16 @@ def preprocess_motion_zca(
 
     print(f"Estimating motion vectors using preset '{motion_preset}'...")
     _, motion, _ = correct_motion(
-        recording=recording_cmr, 
-        preset=motion_preset, 
-        output_motion=True, 
+        recording=recording_cmr,
+        preset=motion_preset,
+        output_motion=True,
         output_motion_info=True
     )
 
     print("Applying robust ZCA whitening to bandpass filtered data...")
     voltage_uV_zca = apply_zca_whitening(
-        voltage_uV_filtered, 
-        epsilon=epsilon, 
+        voltage_uV_filtered,
+        epsilon=epsilon,
         rescale_amplitude=True,
         robust_cov=True
     )
@@ -130,7 +130,7 @@ def preprocess_motion_zca(
     INTAN_BIT_TO_uV = 0.195
     v_new_int16 = np.round(voltage_uV_final / INTAN_BIT_TO_uV).astype(np.int16)
     v_new_int16 = np.swapaxes(v_new_int16, 0, 1)
-    
+
     v_new_int16.tofile(str(output_filepath))
     print(f"Preprocessing complete! Saved to {output_filepath}")
 

@@ -1,4 +1,3 @@
-import pytest
 
 from data_wrangling.ttls import find_index_of_ttl_event_from_another
 from data_wrangling.ttls import get_high_to_low_transition_timestamps

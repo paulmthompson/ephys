@@ -28,7 +28,7 @@ def preprocess_intan_to_zca(
     2. Applies zero-phase SOS bandpass filtering.
     3. Excludes dead channels and applies robust ZCA whitening.
     4. Saves the results as Intan-compatible 16-bit integers to a new binary file.
-    
+
     Args:
         input_filepath (str/Path): Path to raw amplifier.dat
         output_filepath (str/Path): Destination path for the whitened output .dat
@@ -41,7 +41,7 @@ def preprocess_intan_to_zca(
     """
     if dead_channels is None:
         dead_channels = []
-        
+
     print(f"Loading data from {input_filepath}...")
     voltage_uV = intan.load_voltage(str(input_filepath), channel_count)
     voltage_uV = np.swapaxes(voltage_uV, 0, 1)
@@ -53,11 +53,11 @@ def preprocess_intan_to_zca(
 
     print("Computing and applying robust ZCA (excluding dead channels)...")
     good_channels = [ch for ch in range(channel_count) if ch not in dead_channels]
-    
+
     # Assign the result back to voltage_uV because advanced indexing creates a copy
     voltage_uV[good_channels, :] = apply_zca_whitening(
-        voltage_uV[good_channels, :], 
-        epsilon=epsilon, 
+        voltage_uV[good_channels, :],
+        epsilon=epsilon,
         rescale_amplitude=True,
         robust_cov=True
     )
@@ -66,7 +66,7 @@ def preprocess_intan_to_zca(
     INTAN_BIT_TO_uV = 0.195
     voltage_zca_int16 = np.round(voltage_uV / INTAN_BIT_TO_uV).astype(np.int16)
     voltage_zca_int16 = np.swapaxes(voltage_zca_int16, 0, 1)
-    
+
     voltage_zca_int16.tofile(str(output_filepath))
     print(f"Preprocessing complete! Saved to {output_filepath}")
 
