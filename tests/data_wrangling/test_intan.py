@@ -1,4 +1,3 @@
-import pytest
 
 from data_wrangling.intan import get_camera_ttl_array
 

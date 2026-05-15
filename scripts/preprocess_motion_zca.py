@@ -16,6 +16,7 @@ from ephys.probes import get_probe
 import spikeinterface.extractors as se
 from spikeinterface.preprocessing import correct_motion
 from spikeinterface.sortingcomponents.motion import interpolate_motion
+
 def preprocess_motion_zca(
     input_filepath,
     output_filepath,
@@ -37,7 +38,7 @@ def preprocess_motion_zca(
     """
     if dead_channels is None:
         dead_channels = []
-        
+
     good_channels = [ch for ch in range(channel_count) if ch not in dead_channels]
 
     print(f"Loading data from {input_filepath}...")
@@ -63,17 +64,17 @@ def preprocess_motion_zca(
 
     print(f"Estimating motion vectors using preset '{motion_preset}'...")
     _, motion, _ = correct_motion(
-        recording=recording_cmr, 
-        preset=motion_preset, 
-        output_motion=True, 
+        recording=recording_cmr,
+        preset=motion_preset,
+        output_motion=True,
         output_motion_info=True
     )
 
     print("Applying robust ZCA whitening to bandpass filtered data (excluding dead channels)...")
     voltage_uV_zca = voltage_uV_filtered.copy()
     voltage_uV_zca[good_channels, :] = apply_zca_whitening(
-        voltage_uV_filtered[good_channels, :], 
-        epsilon=epsilon, 
+        voltage_uV_filtered[good_channels, :],
+        epsilon=epsilon,
         rescale_amplitude=True,
         robust_cov=True
     )
@@ -99,7 +100,7 @@ def preprocess_motion_zca(
     INTAN_BIT_TO_uV = 0.195
     v_new_int16 = np.round(voltage_uV_final / INTAN_BIT_TO_uV).astype(np.int16)
     v_new_int16 = np.swapaxes(v_new_int16, 0, 1)
-    
+
     v_new_int16.tofile(str(output_filepath))
     print(f"Preprocessing complete! Saved to {output_filepath}")
 
