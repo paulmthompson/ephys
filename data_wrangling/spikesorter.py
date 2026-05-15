@@ -2,6 +2,7 @@ import csv
 import numpy as np
 from scipy import stats
 
+
 def get_spikes(
     csv_path,
     sampling_frequency,
@@ -111,7 +112,6 @@ def read_best_channel(csv_path, sampling_frequency):
     best_channel = []
 
     for neuron_id in neuron_ids:
-
         best_channel.append(stats.mode(max_channel[spike_labels == neuron_id])[0][0])
 
     return best_channel

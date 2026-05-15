@@ -12,6 +12,7 @@ if project_root not in sys.path:
 from ephys.data_wrangling import intan
 from ephys.processing.zca import apply_zca_whitening
 
+
 def preprocess_intan_to_zca(
     input_filepath,
     output_filepath,
@@ -20,7 +21,7 @@ def preprocess_intan_to_zca(
     lowcut=300.0,
     highcut=5000.0,
     dead_channels=None,
-    epsilon=10.0
+    epsilon=10.0,
 ):
     """
     End-to-End preprocessing pipeline:
@@ -48,7 +49,7 @@ def preprocess_intan_to_zca(
 
     print(f"Applying SOS bandpass filter ({lowcut}-{highcut} Hz)...")
     nyq = 0.5 * sampling_rate_hz
-    sos = butter(3, [lowcut / nyq, highcut / nyq], btype='band', output='sos')
+    sos = butter(3, [lowcut / nyq, highcut / nyq], btype="band", output="sos")
     voltage_uV = sosfiltfilt(sos, voltage_uV, axis=1)
 
     print("Computing and applying robust ZCA (excluding dead channels)...")
@@ -56,10 +57,7 @@ def preprocess_intan_to_zca(
 
     # Assign the result back to voltage_uV because advanced indexing creates a copy
     voltage_uV[good_channels, :] = apply_zca_whitening(
-        voltage_uV[good_channels, :],
-        epsilon=epsilon,
-        rescale_amplitude=True,
-        robust_cov=True
+        voltage_uV[good_channels, :], epsilon=epsilon, rescale_amplitude=True, robust_cov=True
     )
 
     print("Converting to 16-bit Intan integers and saving...")
@@ -70,17 +68,30 @@ def preprocess_intan_to_zca(
     voltage_zca_int16.tofile(str(output_filepath))
     print(f"Preprocessing complete! Saved to {output_filepath}")
 
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="End-to-End preprocessing pipeline for Intan data")
     parser.add_argument("input_filepath", type=str, help="Path to raw amplifier.dat")
-    parser.add_argument("output_filepath", type=str, help="Destination path for the whitened output .dat")
-    parser.add_argument("--channel_count", type=int, default=32, help="Number of channels in the Intan recording")
-    parser.add_argument("--sampling_rate_hz", type=float, default=30000.0, help="Sampling rate in Hz")
+    parser.add_argument(
+        "output_filepath", type=str, help="Destination path for the whitened output .dat"
+    )
+    parser.add_argument(
+        "--channel_count", type=int, default=32, help="Number of channels in the Intan recording"
+    )
+    parser.add_argument(
+        "--sampling_rate_hz", type=float, default=30000.0, help="Sampling rate in Hz"
+    )
     parser.add_argument("--lowcut", type=float, default=300.0, help="High-pass cutoff")
     parser.add_argument("--highcut", type=float, default=5000.0, help="Low-pass cutoff")
-    parser.add_argument("--dead_channels", type=int, nargs="*", default=None, help="List of channel indices to exclude")
+    parser.add_argument(
+        "--dead_channels",
+        type=int,
+        nargs="*",
+        default=None,
+        help="List of channel indices to exclude",
+    )
     parser.add_argument("--epsilon", type=float, default=10.0, help="Regularization parameter")
 
     args = parser.parse_args()
@@ -93,5 +104,5 @@ if __name__ == "__main__":
         lowcut=args.lowcut,
         highcut=args.highcut,
         dead_channels=args.dead_channels,
-        epsilon=args.epsilon
+        epsilon=args.epsilon,
     )

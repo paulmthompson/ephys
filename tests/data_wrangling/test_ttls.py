@@ -1,4 +1,3 @@
-
 from data_wrangling.ttls import find_index_of_ttl_event_from_another
 from data_wrangling.ttls import get_high_to_low_transition_timestamps
 from data_wrangling.ttls import get_low_to_high_transition_timestamps
@@ -52,9 +51,7 @@ def generate_alternating_transitions(length, step):
     transition_type = "low_to_high"
     for i in range(0, length, step):
         transitions.append((i, transition_type))
-        transition_type = (
-            "high_to_low" if transition_type == "low_to_high" else "low_to_high"
-        )
+        transition_type = "high_to_low" if transition_type == "low_to_high" else "low_to_high"
     return transitions
 
 
@@ -75,9 +72,9 @@ def test_get_low_to_high_transition_timestamps():
     # Expected results
     expected_onsets = np.array([10, 30])
 
-    assert np.array_equal(
-        ttl_onsets, expected_onsets
-    ), f"Expected {expected_onsets}, but got {ttl_onsets}"
+    assert np.array_equal(ttl_onsets, expected_onsets), (
+        f"Expected {expected_onsets}, but got {ttl_onsets}"
+    )
 
 
 def test_get_high_to_low_transition_timestamps():
@@ -97,9 +94,9 @@ def test_get_high_to_low_transition_timestamps():
     # Expected results
     expected_offsets = np.array([20, 40])
 
-    assert np.array_equal(
-        ttl_offsets, expected_offsets
-    ), f"Expected {expected_offsets}, but got {ttl_offsets}"
+    assert np.array_equal(ttl_offsets, expected_offsets), (
+        f"Expected {expected_offsets}, but got {ttl_offsets}"
+    )
 
 
 def test_get_ttl_timestamps_16bit():
@@ -121,12 +118,12 @@ def test_get_ttl_timestamps_16bit():
     expected_onsets = np.array([10, 30])
     expected_offsets = np.array([20, 40])
 
-    assert np.array_equal(
-        ttl_onsets, expected_onsets
-    ), f"Expected {expected_onsets}, but got {ttl_onsets}"
-    assert np.array_equal(
-        ttl_offsets, expected_offsets
-    ), f"Expected {expected_offsets}, but got {ttl_offsets}"
+    assert np.array_equal(ttl_onsets, expected_onsets), (
+        f"Expected {expected_onsets}, but got {ttl_onsets}"
+    )
+    assert np.array_equal(ttl_offsets, expected_offsets), (
+        f"Expected {expected_offsets}, but got {ttl_offsets}"
+    )
 
 
 def test_find_index_of_ttl_event_from_another():
@@ -161,11 +158,10 @@ def test_find_index_of_ttl_event_from_another():
     expected_on_frames = np.array([2, 7])
     expected_off_frames = np.array([4, 9])
 
-    assert np.array_equal(
-        laser_on_frames, expected_on_frames
-    ), f"Expected {expected_on_frames}, but got {laser_on_frames}"
+    assert np.array_equal(laser_on_frames, expected_on_frames), (
+        f"Expected {expected_on_frames}, but got {laser_on_frames}"
+    )
 
-    assert np.array_equal(
-        laser_off_frames, expected_off_frames
-    ), f"Expected {expected_off_frames}, but got {laser_off_frames}"
-
+    assert np.array_equal(laser_off_frames, expected_off_frames), (
+        f"Expected {expected_off_frames}, but got {laser_off_frames}"
+    )

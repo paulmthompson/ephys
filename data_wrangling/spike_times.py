@@ -96,9 +96,7 @@ def remove_spike_times_after_event(spiketimes_s, event_s):
 
     # Check that the number of trials is the same
     if len(spiketimes_s) != len(event_s):
-        raise ValueError(
-            "The number of trials in spiketimes_s and event_s must be the same."
-        )
+        raise ValueError("The number of trials in spiketimes_s and event_s must be the same.")
 
     spiketimes_s_copy = copy.deepcopy(spiketimes_s)
 

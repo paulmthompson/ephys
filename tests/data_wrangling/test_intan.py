@@ -1,4 +1,3 @@
-
 from data_wrangling.intan import get_camera_ttl_array
 
 
@@ -17,4 +16,3 @@ def test_get_camera_ttl_array(pytestconfig):
     num_expected_onsets = 1352
 
     assert ttl_onsets.shape[0] == num_expected_onsets
-
