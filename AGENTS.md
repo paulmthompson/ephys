@@ -27,7 +27,9 @@ Run both after substantive changes to Python sources (and fix any new issues bef
 Run the test suite with **pytest** via uv:
 
 ```bash
-uv run pytest tests --dirpath=tests/data_wrangling/data
+uv run pytest tests
 ```
+
+The default `--dirpath` is `tests/data_wrangling/data` (see `tests/conftest.py`). Pass `--dirpath=…` only when pointing at other fixture directories.
 
 Use `uv run pytest` so the same interpreter and dependencies as `uv sync` are used.

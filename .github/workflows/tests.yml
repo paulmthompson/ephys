@@ -26,4 +26,4 @@ jobs:
       run: uv sync --all-groups
 
     - name: Run tests
-      run: uv run pytest tests --dirpath=tests/data_wrangling/data
+      run: uv run pytest tests
