@@ -7,7 +7,12 @@ def butter_bandpass(
     fs,
     order=5,
 ):
-    return butter(order, [lowcut, highcut], fs=fs, btype="band",)
+    return butter(
+        order,
+        [lowcut, highcut],
+        fs=fs,
+        btype="band",
+    )
 
 
 def butter_bandpass_filter(

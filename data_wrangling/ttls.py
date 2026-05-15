@@ -1,7 +1,10 @@
 import numpy as np
 
 
-def find_index_of_ttl_event_from_another(ttl_events_1, ttl_events_2,):
+def find_index_of_ttl_event_from_another(
+    ttl_events_1,
+    ttl_events_2,
+):
     """
     This function will find the closest index of each ttl event in ttl_events_1
     for each event in ttl_events_2.
@@ -26,7 +29,6 @@ def find_index_of_ttl_event_from_another(ttl_events_1, ttl_events_2,):
         output_event_indices.append(closest_index)
 
     return output_event_indices
-
 
 
 def get_ttl_timestamps_16bit(
@@ -128,9 +130,7 @@ def match_ttl_timestamps(
         t1_offset = 0
         t2_offset = None
 
-    transition_durations = (
-        transition_2_timestamps[:t2_offset] - transition_1_timestamps[t1_offset:]
-    )
+    transition_durations = transition_2_timestamps[:t2_offset] - transition_1_timestamps[t1_offset:]
 
     print(f"The TTL duration appears to be {np.median(transition_durations)} samples")
 

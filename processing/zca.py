@@ -8,9 +8,7 @@ channels while staying close to the original waveform geometry.
 import numpy as np
 
 
-def apply_zca_whitening(
-    voltage_matrix, epsilon=10.0, rescale_amplitude=True, robust_cov=True
-):
+def apply_zca_whitening(voltage_matrix, epsilon=10.0, rescale_amplitude=True, robust_cov=True):
     """Whiten a voltage matrix with ZCA using robust per-channel scaling.
 
     Each channel is centered with its temporal median. Per-channel scale
@@ -70,10 +68,7 @@ def apply_zca_whitening(
         ``voltage_matrix`` has already been centered in place (see Notes).
     """
     if not isinstance(voltage_matrix, np.ndarray):
-        msg = (
-            "voltage_matrix must be a numpy.ndarray, got "
-            f"{type(voltage_matrix).__name__!r}"
-        )
+        msg = f"voltage_matrix must be a numpy.ndarray, got {type(voltage_matrix).__name__!r}"
         raise TypeError(msg)
     if voltage_matrix.ndim != 2:
         msg = (
@@ -89,19 +84,13 @@ def apply_zca_whitening(
         )
         raise ValueError(msg)
     if not np.issubdtype(voltage_matrix.dtype, np.floating):
-        msg = (
-            "voltage_matrix must have a floating-point dtype; "
-            f"got {voltage_matrix.dtype!r}"
-        )
+        msg = f"voltage_matrix must have a floating-point dtype; got {voltage_matrix.dtype!r}"
         raise TypeError(msg)
     if epsilon <= 0:
         msg = f"epsilon must be positive, got {epsilon!r}"
         raise ValueError(msg)
     if not isinstance(rescale_amplitude, (bool, np.bool_)):
-        msg = (
-            "rescale_amplitude must be bool, got "
-            f"{type(rescale_amplitude).__name__!r}"
-        )
+        msg = f"rescale_amplitude must be bool, got {type(rescale_amplitude).__name__!r}"
         raise TypeError(msg)
     if not isinstance(robust_cov, (bool, np.bool_)):
         msg = f"robust_cov must be bool, got {type(robust_cov).__name__!r}"
@@ -124,17 +113,13 @@ def apply_zca_whitening(
     # 2. Compute a unified, cached Robust Standard Deviation (MAD)
     # Because centered_volt is cleanly centered, we completely skip the nested
     # inner np.median calculation
-    robust_std = (
-        np.median(np.abs(voltage_matrix), axis=1, keepdims=True) * 1.4826
-    )
+    robust_std = np.median(np.abs(voltage_matrix), axis=1, keepdims=True) * 1.4826
 
     # 3. Compute covariance matrix across channels
     if robust_cov:
         # Find time-samples where ALL channels are below 4x std to drop
         # movement artifacts
-        is_clean_sample = np.all(
-            np.abs(voltage_matrix) < (4 * robust_std), axis=0
-        )
+        is_clean_sample = np.all(np.abs(voltage_matrix) < (4 * robust_std), axis=0)
         n_clean = int(is_clean_sample.sum())
         if n_clean < 2:
             msg = (

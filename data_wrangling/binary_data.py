@@ -42,4 +42,3 @@ def get_digital(
     print(f"Number of samples: {len(digital_inputs)}")
 
     return digital_inputs
-

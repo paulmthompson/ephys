@@ -1,4 +1,3 @@
-
 from .binary_data import get_digital
 from .ttls import get_ttl_timestamps_16bit
 
@@ -41,7 +40,8 @@ def get_camera_ttl_array(
     ttl_onsets, ttl_offsets = get_ttl_timestamps_16bit(
         digital_inputs,
         ttl_index,
-        isTransitionLowToHigh,)
+        isTransitionLowToHigh,
+    )
 
     return ttl_onsets, ttl_offsets
 
