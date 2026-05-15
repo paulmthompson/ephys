@@ -11,6 +11,7 @@ requires-python = ">=3.10"
 license = { text = "GPL-3.0-or-later" }
 dependencies = [
     "numpy",
+    "probeinterface>=0.3.2",
     "scipy",
 ]
 
@@ -29,12 +30,13 @@ dev = [
 [tool.hatch.build.targets.sdist]
 include = [
     "/data_wrangling",
+    "/ephys",
     "/plotting",
     "/processing",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["data_wrangling", "plotting", "processing"]
+packages = ["data_wrangling", "ephys", "plotting", "processing"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -42,7 +44,7 @@ testpaths = ["tests"]
 [tool.ruff]
 target-version = "py310"
 line-length = 100
-src = ["data_wrangling", "plotting", "processing", "scripts", "tests"]
+src = ["data_wrangling", "ephys", "plotting", "processing", "scripts", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W"]
@@ -54,9 +56,4 @@ ignore = ["E501"]
 [tool.ty.src]
 # Optional scripts use legacy `ephys.*` imports and extra deps not in this package;
 # type-check installable modules and tests until those are unified.
-include = ["data_wrangling", "plotting", "processing", "tests"]
-
-# ``plotting`` imports use the consumer layout ``ephys.processing.*`` (repo root);
-# that namespace is not a first-party package root when ty runs inside this project.
-[tool.ty.analysis]
-allowed-unresolved-imports = ["ephys.processing.spike_align"]
+include = ["data_wrangling", "ephys", "plotting", "processing", "tests"]
