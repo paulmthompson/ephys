@@ -55,3 +55,8 @@ ignore = ["E501"]
 # Optional scripts use legacy `ephys.*` imports and extra deps not in this package;
 # type-check installable modules and tests until those are unified.
 include = ["data_wrangling", "plotting", "processing", "tests"]
+
+# ``plotting`` imports use the consumer layout ``ephys.processing.*`` (repo root);
+# that namespace is not a first-party package root when ty runs inside this project.
+[tool.ty.analysis]
+allowed-unresolved-imports = ["ephys.processing.spike_align"]
