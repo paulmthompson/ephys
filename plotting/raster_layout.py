@@ -1,21 +1,21 @@
-"""Compressed event-raster layout: fewer rows than trials when space is tight.
+"""Layout and geometry utilities for high-density spike rasters.
 
-Matplotlib ``eventplot`` draws one horizontal row per list entry. When there
-are **more trials than usable vertical pixels** (or than comfortable row
-spacing), this module **merges spikes from consecutive trials** into a single
-display row so multiple trials share one raster line—see
-:func:`bin_spike_lists` and :func:`merge_spikes_chunk`.
+This module provides tools for managing vertical space in raster plots,
+including "compression" (merging multiple trials into single rows) and
+precise calculation of marker geometry for Matplotlib's ``eventplot``.
 
-It also supplies **row geometry** for ``eventplot``: equally spaced
-``lineoffsets`` inside a fixed band (:func:`lineoffsets_equal_height_band`) and
-a capped marker half-height derived from band height and row counts across
-stacked bands (:func:`effective_raster_linelength`). For paired onset/offset
-lists, :func:`sorted_subset_trials` subsets rows and reorders by first-spike
-time on the primary alignment.
+Key functionality:
 
-All helpers are **contact-agnostic**: they operate on parallel lists of per-trial
-spike time arrays (seconds) and parameters passed through to
-:func:`matplotlib.axes.Axes.eventplot` as ``lineoffsets`` / ``linelengths``.
+* Row Merging: :func:`bin_spike_lists` and :func:`merge_spikes_chunk` collapse
+  consecutive trials into fewer rows when vertical resolution is limited.
+* Geometry Helpers: :func:`lineoffsets_equal_height_band` and
+  :func:`effective_raster_linelength` calculate optimal vertical offsets and
+  marker lengths to maintain visual consistency across stacked panels.
+* Trial Sorting: :func:`sorted_subset_trials` provides convenient subsetting
+  and sorting of parallel trial lists by first-spike latency.
+
+These utilities operate directly on lists of numpy arrays (spike times in
+seconds) and are agnostic to specific experimental paradigms.
 """
 
 from __future__ import annotations

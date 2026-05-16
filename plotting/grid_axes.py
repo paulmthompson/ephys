@@ -1,22 +1,18 @@
-"""Helpers for Matplotlib axes that live in tight multi-panel grids.
+"""Layout utilities for multi-panel grids and publication-quality figures.
 
-Publication-style electrophysiology figures often stack traces, rasters, PSTHs,
-and summary panels under a single nested ``GridSpec`` with small ``hspace`` /
-``wspace`` so panels read as one continuous layout. In that regime, native
-decorations such as ``set_xlabel`` on the bottom data axis are easy to clip:
-layout engines size each subplot box independently, and long tick labels or a
-caption compete for the same vertical strip.
+This module provides tools for managing complex, multi-panel layouts where
+standard Matplotlib decorations (like labels and ticks) often collide or clip.
+It promotes a robust layout strategy using dedicated spacer axes to ensure
+consistent typography and spacing in tight grids.
 
-This module holds small, reusable utilities for the layout pattern recommended in
-manuscript figure code: reserve **dedicated spacer axes** (typically
-``axis("off")``) for shared axis text, anchor manual strings to the **edge of
-the spacer farthest from the data** so glyphs grow *into* the spacer, and keep
-tick styling on the data axes. That avoids ``clip_on=False`` on data axes as a
-default fix and keeps neighbor panels composable when the figure grows.
+Summary of tools:
 
-The helpers here are intentionally minimal and dependency-light (Matplotlib
-only) so downstream projects can adopt the same conventions without pulling in
-analysis-specific code.
+* :func:`style_x_axis_with_dedicated_label_row`: Styles data-axis ticks while
+  placing the axis label in a separate spacer row. This prevents clipping and
+  allows for precise control over vertical spacing when panels are stacked.
+
+These utilities are intentionally minimal and depend only on Matplotlib,
+encouraging consistent layout patterns across various experimental views.
 """
 
 from __future__ import annotations

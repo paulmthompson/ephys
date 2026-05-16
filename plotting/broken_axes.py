@@ -1,4 +1,17 @@
-"""Vertical broken-axis styling for adjacent Matplotlib axes pairs."""
+"""Styling utilities for broken-axis visualizations.
+
+This module provides tools for creating visual breaks between adjacent axes,
+a common pattern when displaying data with non-contiguous ranges or when
+spanning multiple panels.
+
+Key functionality:
+
+* Broken-Axis Markers: :func:`add_vertical_broken_axis_style` hides internal
+  spines and adds diagonal break marks between two horizontally adjacent axes.
+
+These markers use axes coordinates to ensure precise alignment along the
+shared boundary regardless of the underlying data scales.
+"""
 
 from __future__ import annotations
 

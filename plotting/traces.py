@@ -1,40 +1,20 @@
 """Voltage trace plotting and manuscript-style trace margin layout.
 
-This module provides:
+This module provides tools for rendering high-quality voltage traces with
+dedicated margin axes for scale bars and labels. It uses a nested grid layout
+to ensure that scale graphics remain clear and consistently placed.
 
-* :func:`plot_voltage_trace` — load a cached snippet vector and draw a min/max
-  envelope in a single axes.
+Summary of functionality:
 
-* :class:`VoltageTraceMarginStyle` — frozen options for grid ratios, fonts,
-  scale sizes (µV / ms), trace and label colors, scale line color, and a shared
-  scale-bar stroke width (points, or optional fraction of figure height).
-
-* :class:`StimTraceActivityTopSlot` and :func:`add_stim_trace_margin_block` — a
-  nested ``3×2`` ``GridSpec`` inside one subplot cell: strip label and
-  stimulus strip on the top row, microvolt scale (``sharey`` with trace) and
-  voltage trace on the middle row, and a time-scale row (``sharex`` with trace)
-  on the bottom.
-  Labels and scale bars live in dedicated axes so they do not rely on negative
-  ``transAxes`` coordinates on the trace axes.
-
-* :func:`draw_margin_strip_label` — centered text in the strip-label axes.
-
-* :func:`populate_stim_trace_margin_slot` — one call for voltage, optional
-  stimulus (you pass a callable that draws on ``ax_strip``), strip label, and
-  both scale bars.
-
-* :func:`draw_microvolt_scale_bar_uv_axis` and
-  :func:`draw_time_scale_bar_trace_bottom_cell` — draw scale graphics on the
-  margin axes after :func:`plot_voltage_trace` (and stimulus helpers) have set
-  axis limits.
-
-
-  COMMENTS:
-  plot_voltage_trace is taking a filepath and pre-supposes particular file structure (npy)
-  Otherwise, everything up to this point is data agnostic and could be moved out of snakemake routines.
-  populate_stim_trace_margin_slot is similar - this should be npy independent
-
-
+* :func:`plot_voltage_trace`: Renders a voltage vector as a min/max envelope.
+* :class:`VoltageTraceMarginStyle`: Configuration for grid ratios, fonts,
+  and scale-bar styling.
+* :func:`add_stim_trace_margin_block`: Creates a nested ``3×2`` grid for a
+  trace, stimulus strip, and margin labels/scales.
+* :func:`populate_stim_trace_margin_slot`: Orchestrates the plotting of voltage,
+  stimulus, and scale bars in a single call.
+* Scale bar helpers: Specialized functions for drawing µV and ms scale bars
+  on dedicated margin axes.
 """
 
 from __future__ import annotations

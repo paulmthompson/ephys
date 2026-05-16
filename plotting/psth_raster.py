@@ -1,4 +1,16 @@
-"""Step PSTHs and per-trial spike rasters for aligned electrophysiology views."""
+"""Visualizations for Per-Stimulus Time Histograms (PSTH) and spike rasters.
+
+This module provides standard plotting functions for aligned electrophysiology
+data, focusing on two primary views:
+
+* PSTH Rendering: :func:`plot_psth` draws step-style histograms representing
+  spike probabilities or rates across binned time.
+* Event Rasters: :func:`plot_raster` renders per-trial spike times as horizontal
+  tick marks, supporting custom vertical offsets and styling.
+
+These functions are designed to work together in aligned views, sharing time
+axes to show both aggregate response patterns and trial-to-trial variability.
+"""
 
 from __future__ import annotations
 

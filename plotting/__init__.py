@@ -1,4 +1,21 @@
-"""Matplotlib plotting helpers for electrophysiology figures."""
+"""Matplotlib plotting utilities for electrophysiology figures.
+
+This package provides tools for rendering high-quality, publication-ready
+visualizations of electrophysiology data. It is organized into several
+functional areas:
+
+* Aligned Views: Functions for plotting PSTHs and spike rasters
+  (:mod:`.psth_raster`).
+* Trace Rendering: Tools for high-density voltage traces and margin scales
+  (:mod:`.traces`).
+* Layout & Geometry: Helpers for managing vertical space, trial merging,
+  and precise marker placement in dense grids (:mod:`.raster_layout`).
+* Grid Utilities: Robust strategies for axis labeling and multi-panel
+  alignment (:mod:`.grid_axes`, :mod:`.broken_axes`).
+
+These utilities focus on visual consistency, precise control over layout
+spacing, and efficient handling of large-scale neural data.
+"""
 
 from .broken_axes import add_vertical_broken_axis_style
 from .grid_axes import style_x_axis_with_dedicated_label_row
