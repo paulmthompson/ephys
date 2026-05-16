@@ -41,7 +41,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from dataclasses import dataclass
 
 import matplotlib.axes
 import numpy as np
@@ -77,15 +76,11 @@ def _plot_scale_bar_stroke(
     )
 
 
-def _resolved_scale_bar_linewidth_pt(
-    ax: Axes, s: VoltageTraceMarginStyle
-) -> float:
+def _resolved_scale_bar_linewidth_pt(ax: Axes, s: VoltageTraceMarginStyle) -> float:
     """Return scale-bar ``linewidth`` in Matplotlib points for ``ax``."""
     if s.scale_bar_linewidth_figheight_frac is not None:
         fig = ax.figure
-        return float(
-            s.scale_bar_linewidth_figheight_frac * fig.get_figheight() * 72.0
-        )
+        return float(s.scale_bar_linewidth_figheight_frac * fig.get_figheight() * 72.0)
     return float(s.scale_bar_linewidth_pt)
 
 
@@ -200,6 +195,8 @@ def draw_margin_strip_label(
 
     This is the top-row, left-column cell from
     :class:`StimTraceActivityTopSlot`.
+
+    Parameters
     ----------
     ax_strip_label
         From :class:`StimTraceActivityTopSlot`.
@@ -288,9 +285,7 @@ def plot_voltage_trace(
     style: VoltageTraceMarginStyle | None = None,
     trace_color: str | None = None,
 ) -> None:
-    """Load a `.npy` voltage vector and draw a min/max envelope on ``ax``.
-
-    If the file is missing, prints a message and leaves ``ax`` unchanged.
+    """Take voltage vector and draw a min/max envelope on ``ax``.
 
     Parameters
     ----------
@@ -313,7 +308,6 @@ def plot_voltage_trace(
         If set, overrides ``style.trace_color`` (and the default gray) for the
         envelope and outline strokes.
     """
-
 
     voltage = np.asarray(voltage).ravel()
     indices, mins, maxs = get_min_max_envelope(voltage, bin_size)
@@ -462,7 +456,7 @@ def draw_time_scale_bar_trace_bottom_cell(
         pad_s = 0.015 * span
     x1 = xmax - pad_s
     x0 = x1 - width_s
-    label_ms = int(round(width_s * 1000.0))
+    label_ms = round(width_s * 1000.0)
     lw = _resolved_scale_bar_linewidth_pt(ax_time, s)
     _plot_scale_bar_stroke(
         ax_time,
