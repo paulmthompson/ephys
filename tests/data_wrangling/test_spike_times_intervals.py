@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from data_wrangling.spike_times import (
+from ephys.data_wrangling.spike_times import (
     count_spikes_in_tick_interval,
     count_spikes_in_tick_intervals,
     firing_rate_hz_from_interval_count,

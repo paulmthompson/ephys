@@ -8,7 +8,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 
-from plotting.broken_axes import add_vertical_broken_axis_style
+from ephys.plotting.broken_axes import add_vertical_broken_axis_style
 
 
 def test_add_vertical_broken_axis_style_hides_spines_and_draws() -> None:

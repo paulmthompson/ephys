@@ -1,4 +1,4 @@
-from data_wrangling.intan import get_camera_ttl_array
+from ephys.data_wrangling.intan import get_camera_ttl_array
 
 
 def test_get_camera_ttl_array(pytestconfig):

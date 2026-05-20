@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from processing.spike_align import (
+from ephys.processing.spike_align import (
     apply_trial_order,
     event_ticks_greedy_non_overlapping_half_windows,
     sort_order_by_spike_count_descending,
