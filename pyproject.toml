@@ -11,6 +11,7 @@ requires-python = ">=3.10"
 license = { text = "GPL-3.0-or-later" }
 dependencies = [
     "numpy",
+    "spikeinterface",
     "probeinterface>=0.3.2",
     "scipy",
 ]
@@ -29,14 +30,11 @@ dev = [
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/data_wrangling",
     "/ephys",
-    "/plotting",
-    "/processing",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["data_wrangling", "ephys", "plotting", "processing"]
+packages = ["ephys"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

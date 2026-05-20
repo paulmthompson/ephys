@@ -2,16 +2,8 @@ import numpy as np
 from pathlib import Path
 from scipy.signal import butter, sosfiltfilt
 
-import sys
-
-# Add project root to path so we can import 'ephys'
-project_root = str(Path(__file__).resolve().parent.parent.parent)
-if project_root not in sys.path:
-    sys.path.append(project_root)
-
 from ephys.data_wrangling import intan
 from ephys.processing.zca import apply_zca_whitening
-
 
 def preprocess_intan_to_zca(
     input_filepath,
