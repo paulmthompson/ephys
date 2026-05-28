@@ -19,6 +19,9 @@ from collections.abc import Sequence
 import matplotlib.axes
 import numpy as np
 
+# Matplotlib eventplot stroke width (points); separate from raster linelength cap.
+DEFAULT_RASTER_EVENT_LINEWIDTH = 0.6
+
 
 def plot_psth(
     ax: matplotlib.axes.Axes,
@@ -104,6 +107,7 @@ def plot_raster(
     blank_style: bool = False,
     lineoffsets: Sequence[float] | np.ndarray | None = None,
     linelengths: float = 0.8,
+    event_linewidth: float = DEFAULT_RASTER_EVENT_LINEWIDTH,
     event_zorder: float = 4.0,
 ) -> None:
     """Event raster: one row per trial.
@@ -114,7 +118,10 @@ def plot_raster(
         Vertical center for each trial (``orientation='horizontal'``). Length
         must match the number of trials. When omitted, trials use ``0..n-1``.
     linelengths
-        Total extent of each marker along the axis orthogonal to spike time.
+        Total extent of each marker along the axis orthogonal to spike time
+        (data units).
+    event_linewidth
+        Matplotlib ``eventplot`` stroke width in points.
     event_zorder
         Draw spikes above axis shading / spans (default ``4``).
     """
@@ -127,10 +134,10 @@ def plot_raster(
             msg = "lineoffsets length must match number of trials"
             raise ValueError(msg)
 
-    event_collections =ax.eventplot(
+    event_collections = ax.eventplot(
         spike_times_per_trial_s,
         color="black",
-        linewidths=0.2,  # 0.6
+        linewidths=float(event_linewidth),
         linelengths=linelengths,
         lineoffsets=list(lo),
         orientation="horizontal",
