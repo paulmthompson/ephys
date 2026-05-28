@@ -31,6 +31,10 @@ class RasterOptions(BaseModel):
         default=None,
         description="Cap for spike tick linewidths in data units.",
     )
+    event_linewidth: float | None = Field(
+        default=0.6,
+        description="Matplotlib eventplot stroke width (points).",
+    )
 
 
 class PsthOptions(BaseModel):
@@ -42,16 +46,17 @@ class PsthOptions(BaseModel):
     )
     bin_size_s: float | None = Field(
         default=None,
+        gt=0,
         description="PSTH bin size in seconds.",
     )
     max_psth_y: float | None = Field(
         default=None,
+        gt=0,
         description="PSTH y-axis scale limit.",
     )
     
 
-# Matplotlib eventplot stroke width (points); separate from raster linelength cap.
-DEFAULT_RASTER_EVENT_LINEWIDTH = 0.6
+
 
 
 def plot_psth(
@@ -138,7 +143,7 @@ def plot_raster(
     blank_style: bool = False,
     lineoffsets: Sequence[float] | np.ndarray | None = None,
     linelengths: float = 0.8,
-    event_linewidth: float = DEFAULT_RASTER_EVENT_LINEWIDTH,
+    event_linewidth: float = 0.6,
     event_zorder: float = 4.0,
 ) -> None:
     """Event raster: one row per trial.
