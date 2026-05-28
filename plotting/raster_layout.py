@@ -25,6 +25,7 @@ import numpy as np
 from ephys.processing.spike_align import (
     apply_trial_order,
     sort_order_by_first_spike,
+    sort_order_by_spike_count_descending,
 )
 
 
@@ -180,6 +181,45 @@ def sorted_subset_trials(
         return [], []
     r_pri = [rel_primary[int(i)] for i in row_indices]
     order = sort_order_by_first_spike(r_pri)
+    r_pri_o = apply_trial_order(r_pri, order)
+    r_sec = [rel_secondary[int(i)] for i in row_indices]
+    r_sec_o = apply_trial_order(r_sec, order)
+    return r_pri_o, r_sec_o
+
+
+def sorted_subset_trials_by_spike_count(
+    rel_primary: list[np.ndarray],
+    rel_secondary: list[np.ndarray],
+    row_indices: np.ndarray,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """Subset paired trial lists; sort by spike count for stacked rasters.
+
+    Parameters
+    ----------
+    rel_primary
+        Spike times per trial for ordering (e.g. onset-aligned).
+    rel_secondary
+        Parallel list (e.g. offset-aligned), same permutation as primary.
+    row_indices
+        Integer indices into both lists (typically from a mask or category).
+
+    Returns
+    -------
+    tuple[list[np.ndarray], list[np.ndarray]]
+        ``(primary_sorted, secondary_sorted)``. Empty lists if
+        ``row_indices`` is empty.
+
+    Notes
+    -----
+    Trials are ordered so that **more spikes appear toward the top** of each
+    raster band (higher ``lineoffsets``) and **zero-spike trials toward the
+    bottom**, by reversing
+    :func:`ephys.processing.spike_align.sort_order_by_spike_count_descending`.
+    """
+    if row_indices.size == 0:
+        return [], []
+    r_pri = [rel_primary[int(i)] for i in row_indices]
+    order = sort_order_by_spike_count_descending(r_pri)[::-1]
     r_pri_o = apply_trial_order(r_pri, order)
     r_sec = [rel_secondary[int(i)] for i in row_indices]
     r_sec_o = apply_trial_order(r_sec, order)
