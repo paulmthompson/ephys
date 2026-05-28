@@ -48,6 +48,7 @@ class PsthOptions(BaseModel):
         default=None,
         description="PSTH y-axis scale limit.",
     )
+    
 
 # Matplotlib eventplot stroke width (points); separate from raster linelength cap.
 DEFAULT_RASTER_EVENT_LINEWIDTH = 0.6
