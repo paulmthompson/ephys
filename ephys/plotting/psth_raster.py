@@ -18,9 +18,45 @@ from collections.abc import Sequence
 
 import matplotlib.axes
 import numpy as np
+from pydantic import BaseModel, Field
 
-# Matplotlib eventplot stroke width (points); separate from raster linelength cap.
-DEFAULT_RASTER_EVENT_LINEWIDTH = 0.6
+class RasterOptions(BaseModel):
+    """Configuration for raster plots."""
+
+    trials_per_bin: int | None = Field(
+        default=None,
+        description="Consecutive trials collapsed into single raster rows.",
+    )
+    linewidths: float | None = Field(
+        default=None,
+        description="Cap for spike tick linewidths in data units.",
+    )
+    event_linewidth: float | None = Field(
+        default=0.6,
+        description="Matplotlib eventplot stroke width (points).",
+    )
+
+
+class PsthOptions(BaseModel):
+    """Configuration for PSTH grids."""
+
+    starting_time_s: float | None = Field(
+        default=None,
+        description="Time window start relative to alignment event.",
+    )
+    bin_size_s: float | None = Field(
+        default=None,
+        gt=0,
+        description="PSTH bin size in seconds.",
+    )
+    max_psth_y: float | None = Field(
+        default=None,
+        gt=0,
+        description="PSTH y-axis scale limit.",
+    )
+    
+
+
 
 
 def plot_psth(
@@ -107,7 +143,7 @@ def plot_raster(
     blank_style: bool = False,
     lineoffsets: Sequence[float] | np.ndarray | None = None,
     linelengths: float = 0.8,
-    event_linewidth: float = DEFAULT_RASTER_EVENT_LINEWIDTH,
+    event_linewidth: float = 0.6,
     event_zorder: float = 4.0,
 ) -> None:
     """Event raster: one row per trial.
