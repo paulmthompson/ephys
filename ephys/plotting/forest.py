@@ -23,7 +23,7 @@ class ForestColumnSpec(BaseModel):
 class ForestGridOptions(BaseModel):
     """Configuration for an N-column forest plot grid."""
 
-    ci_level: float = 0.89
+    ci_level: float = Field(default=0.89, ge=0.0, le=1.0)
     wspace: float = 0.3
     columns: list[ForestColumnSpec] = Field(default_factory=list)
 
@@ -77,6 +77,9 @@ def plot_forest(
         ax.set_title(title)
         ax.set_axis_off()
         return
+
+    if "animal" not in df.columns or "session" not in df.columns:
+        raise ValueError("DataFrame must contain 'animal' and 'session' columns.")
 
     lower_q = (1.0 - ci_level) / 2.0
     upper_q = 1.0 - lower_q
