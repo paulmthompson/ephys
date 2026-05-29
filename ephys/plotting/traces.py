@@ -28,6 +28,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.gridspec import SubplotSpec
 from matplotlib.transforms import Transform, blended_transform_factory
+from pydantic import BaseModel, Field
 
 from ephys.processing.envelope import get_min_max_envelope
 
@@ -56,7 +57,7 @@ def _plot_scale_bar_stroke(
     )
 
 
-def _resolved_scale_bar_linewidth_pt(ax: Axes, s: VoltageTraceMarginStyle) -> float:
+def _resolved_scale_bar_linewidth_pt(ax: Axes, s: VoltageTraceOptions) -> float:
     """Return scale-bar ``linewidth`` in Matplotlib points for ``ax``."""
     if s.scale_bar_linewidth_figheight_frac is not None:
         fig = ax.figure
@@ -64,8 +65,7 @@ def _resolved_scale_bar_linewidth_pt(ax: Axes, s: VoltageTraceMarginStyle) -> fl
     return float(s.scale_bar_linewidth_pt)
 
 
-@dataclass(frozen=True)
-class VoltageTraceMarginStyle:
+class VoltageTraceOptions(BaseModel):
     """Tuning for a voltage margin column (:class:`StimTraceActivityTopSlot`).
 
     Grid ratios are stable defaults for the nested ``3×2`` block; typography,
@@ -80,6 +80,8 @@ class VoltageTraceMarginStyle:
     height in points (``frac * fig.get_figheight() * 72``), which tracks figure
     size; in that case ``scale_bar_linewidth_pt`` is ignored.
     """
+
+    model_config = {"frozen": True}
 
     hspace_trace: float = 0.05
     stim_ratio: float = 0.08
@@ -97,7 +99,7 @@ class VoltageTraceMarginStyle:
     scale_bar_linewidth_figheight_frac: float | None = None
 
 
-DEFAULT_VOLTAGE_TRACE_MARGIN_STYLE = VoltageTraceMarginStyle()
+DEFAULT_VOLTAGE_TRACE_OPTIONS = VoltageTraceOptions()
 
 
 @dataclass(frozen=True)
@@ -122,7 +124,7 @@ def add_stim_trace_margin_block(
     fig: Figure,
     gs_cell: SubplotSpec,
     *,
-    style: VoltageTraceMarginStyle | None = None,
+    style: VoltageTraceOptions | None = None,
 ) -> StimTraceActivityTopSlot:
     """Build the ``3×2`` stimulus / trace / scale margin block in one cell.
 
@@ -132,9 +134,9 @@ def add_stim_trace_margin_block(
         Parent figure and subplot cell to fill.
     style
         Grid and spacing for the margin block. If ``None``, uses
-        :data:`DEFAULT_VOLTAGE_TRACE_MARGIN_STYLE`.
+        :data:`DEFAULT_VOLTAGE_TRACE_OPTIONS`.
     """
-    s = style or DEFAULT_VOLTAGE_TRACE_MARGIN_STYLE
+    s = style or DEFAULT_VOLTAGE_TRACE_OPTIONS
     gs_trace = gs_cell.subgridspec(
         3,
         2,
@@ -169,7 +171,7 @@ def draw_margin_strip_label(
     ax_strip_label: Axes,
     text: str,
     *,
-    style: VoltageTraceMarginStyle | None = None,
+    style: VoltageTraceOptions | None = None,
 ) -> None:
     """Draw centered label text in the left strip-label axes.
 
@@ -184,9 +186,9 @@ def draw_margin_strip_label(
         Shown in axes coordinates at the center of the cell.
     style
         Uses ``fontsize`` and ``label_color``. If ``None``, uses
-        :data:`DEFAULT_VOLTAGE_TRACE_MARGIN_STYLE`.
+        :data:`DEFAULT_VOLTAGE_TRACE_OPTIONS`.
     """
-    s = style or DEFAULT_VOLTAGE_TRACE_MARGIN_STYLE
+    s = style or DEFAULT_VOLTAGE_TRACE_OPTIONS
     ax_strip_label.text(
         0.5,
         0.5,
@@ -202,7 +204,7 @@ def draw_margin_strip_label(
 def populate_stim_trace_margin_slot(
     slot: StimTraceActivityTopSlot,
     *,
-    style: VoltageTraceMarginStyle | None = None,
+    style: VoltageTraceOptions | None = None,
     voltage: np.ndarray,
     snippet_start_idx: int,
     strip_label: str | None = None,
@@ -221,7 +223,7 @@ def populate_stim_trace_margin_slot(
         Axes bundle from :func:`add_stim_trace_margin_block`.
     style
         Passed through to drawing helpers. If ``None``, uses
-        :data:`DEFAULT_VOLTAGE_TRACE_MARGIN_STYLE`.
+        :data:`DEFAULT_VOLTAGE_TRACE_OPTIONS`.
     voltage, snippet_start_idx
         Arguments to :func:`plot_voltage_trace` for ``slot.ax_trace``.
     strip_label
@@ -262,7 +264,7 @@ def plot_voltage_trace(
     *,
     fs: float = 30000.0,
     bin_size: int = 10,
-    style: VoltageTraceMarginStyle | None = None,
+    style: VoltageTraceOptions | None = None,
     trace_color: str | None = None,
 ) -> None:
     """Take voltage vector and draw a min/max envelope on ``ax``.
@@ -293,7 +295,7 @@ def plot_voltage_trace(
     indices, mins, maxs = get_min_max_envelope(voltage, bin_size)
     time = (indices + start_idx) / fs
 
-    s = style or DEFAULT_VOLTAGE_TRACE_MARGIN_STYLE
+    s = style or DEFAULT_VOLTAGE_TRACE_OPTIONS
     color = trace_color if trace_color is not None else s.trace_color
 
     ax.fill_between(time, mins, maxs, color=color, alpha=1.0, linewidth=0)
@@ -334,7 +336,7 @@ def draw_microvolt_scale_bar_uv_axis(
     ax_uv: Axes,
     ax_voltage: Axes,
     *,
-    style: VoltageTraceMarginStyle | None = None,
+    style: VoltageTraceOptions | None = None,
     microvolts_per_axis_unit: float | None = None,
     bar_x: float = 0.86,
     label_anchor_x: float = 0.82,
@@ -353,7 +355,7 @@ def draw_microvolt_scale_bar_uv_axis(
         Voltage trace axes (used to infer µV vs mV scaling when needed).
     style
         Font size, bar height (µV), label and line colors. If ``None``, uses
-        :data:`DEFAULT_VOLTAGE_TRACE_MARGIN_STYLE`.
+        :data:`DEFAULT_VOLTAGE_TRACE_OPTIONS`.
     microvolts_per_axis_unit
         If ``None``, inferred from ``ax_voltage`` limits.
     bar_x
@@ -362,7 +364,7 @@ def draw_microvolt_scale_bar_uv_axis(
         Data-space *x* for the text anchor (``ha='right'``), slightly left of
         ``bar_x``.
     """
-    s = style or DEFAULT_VOLTAGE_TRACE_MARGIN_STYLE
+    s = style or DEFAULT_VOLTAGE_TRACE_OPTIONS
     bar_height_microvolts = s.microvolt_scale_height
     fontsize = s.fontsize
     if microvolts_per_axis_unit is None:
@@ -402,7 +404,7 @@ def draw_microvolt_scale_bar_uv_axis(
 def draw_time_scale_bar_trace_bottom_cell(
     ax_time: Axes,
     *,
-    style: VoltageTraceMarginStyle | None = None,
+    style: VoltageTraceOptions | None = None,
     axes_y_bar: float = 1.0,
     axes_y_label: float = 0.82,
     pad_s: float | None = None,
@@ -419,14 +421,14 @@ def draw_time_scale_bar_trace_bottom_cell(
         Bottom-row axes sharing *x* with the voltage trace.
     style
         Font size, bar length from ``time_scale_ms``, label and line colors. If
-        ``None``, uses :data:`DEFAULT_VOLTAGE_TRACE_MARGIN_STYLE`.
+        ``None``, uses :data:`DEFAULT_VOLTAGE_TRACE_OPTIONS`.
     axes_y_bar, axes_y_label
         Axes-coordinate *y* for the bar and for the label anchor (blended with
         data *x*).
     pad_s
         Gap from the right ``xlim`` to the bar end; default 1.5% of span.
     """
-    s = style or DEFAULT_VOLTAGE_TRACE_MARGIN_STYLE
+    s = style or DEFAULT_VOLTAGE_TRACE_OPTIONS
     width_s = s.time_scale_ms / 1000.0
     fontsize = s.fontsize
     trans = blended_transform_factory(ax_time.transData, ax_time.transAxes)
