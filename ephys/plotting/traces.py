@@ -7,7 +7,7 @@ to ensure that scale graphics remain clear and consistently placed.
 Summary of functionality:
 
 * :func:`plot_voltage_trace`: Renders a voltage vector as a min/max envelope.
-* :class:`VoltageTraceMarginStyle`: Configuration for grid ratios, fonts,
+* :class:`VoltageTraceOptions`: Configuration for grid ratios, fonts,
   and scale-bar styling.
 * :func:`add_stim_trace_margin_block`: Creates a nested ``3×2`` grid for a
   trace, stimulus strip, and margin labels/scales.
