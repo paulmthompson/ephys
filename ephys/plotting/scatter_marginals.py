@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
 _U_PARA = np.array([1.0, 1.0], dtype=np.float64) / np.sqrt(2.0)
+# Reference bin count for auto diff-inset bar height (independent of ``diff_hist_bins``).
+_DIFF_INSET_DEFAULT_COUNT_EXTENT_REF_BINS = 10
 
 
 def _format_diff_inset_tick_label(d: float) -> str:
@@ -59,7 +61,24 @@ class ScatterMarginalsOptions(BaseModel):
     diff_hist_bins: int = Field(default=10, ge=1)
     diff_inset_center: float | None = None
     diff_inset_d_half_extent: float = Field(default=5.0, gt=0.0)
-    diff_inset_count_extent: float | None = Field(default=None, gt=0.0)
+    diff_inset_count_extent: float | None = Field(
+        default=None,
+        gt=0.0,
+        description=(
+            "Max bar height for the y−x inset, in scatter data units along the "
+            "(1, 1) direction. When unset, derived from diff_inset_d_half_extent "
+            "only (not diff_hist_bins)."
+        ),
+    )
+    diff_inset_count_ylim: float | None = Field(
+        default=None,
+        gt=0.0,
+        description=(
+            "Optional count ceiling for inset bar scaling. Bar heights are "
+            "count / max(max_bin_count, count_ylim) * count_extent; use to "
+            "prevent a single tall bin from filling the full height."
+        ),
+    )
     diff_inset_xtick_labels: bool = False
     diff_inset_overflow_bins: bool = False
     point_marker: str = "o"
@@ -141,9 +160,8 @@ def _limits_are_equal(
     hi_y: float,
 ) -> bool:
     """True when scatter x and y share the same numeric limits."""
-    return (
-        np.isclose(lo_x, lo_y, rtol=0.0, atol=1e-12)
-        and np.isclose(hi_x, hi_y, rtol=0.0, atol=1e-12)
+    return np.isclose(lo_x, lo_y, rtol=0.0, atol=1e-12) and np.isclose(
+        hi_x, hi_y, rtol=0.0, atol=1e-12
     )
 
 
@@ -241,9 +259,15 @@ def diff_inset_bars(
 
 
 def diff_inset_default_count_extent(d_half_extent: float, n_bins: int) -> float:
-    """Default max bar height: one bin width along ``(1, 1)`` in data units."""
-    n = max(int(n_bins), 1)
-    return (2.0 * float(d_half_extent) / float(n)) * 0.85
+    """Default max bar height along ``(1, 1)`` in scatter data units.
+
+    Uses a fixed reference bin count so increasing ``diff_hist_bins`` does not
+    shrink the tallest bar. The ``n_bins`` argument is accepted for backward
+    compatibility but is not used.
+    """
+    _ = n_bins
+    ref = float(_DIFF_INSET_DEFAULT_COUNT_EXTENT_REF_BINS)
+    return (2.0 * float(d_half_extent) / ref) * 0.85
 
 
 def diff_inset_bar_polygon_vertices(
@@ -334,6 +358,7 @@ def _draw_y_minus_x_hist_inset(
     diagonal_pos: float,
     d_half_extent: float,
     count_extent: float | None,
+    count_ylim: float | None,
     n_bins: int,
     show_xtick_labels: bool = False,
     overflow_bins: bool = False,
@@ -344,6 +369,9 @@ def _draw_y_minus_x_hist_inset(
     ``[-extent, +extent]``. With ``overflow_bins``, low/high tail bars (one bin wide,
     just outside that range) count ``y - x < -extent`` and ``y - x > +extent``.
     Bars grow along ``(1, 1)``; tail bars use lighter fill.
+
+    ``count_extent`` caps the tallest bar in data units; ``count_ylim`` optionally
+    raises the count denominator so bars do not all saturate at the height limit.
     """
     diffs = (y - x).astype(np.float64, copy=False)
     diffs = diffs[np.isfinite(diffs)]
@@ -373,10 +401,14 @@ def _draw_y_minus_x_hist_inset(
         count_extent=count_extent_eff,
     )
     max_c = float(max(counts_all))
+    if count_ylim is not None:
+        scale_denom = max(max_c, float(count_ylim))
+    else:
+        scale_denom = max_c
     for bar in bars:
         if bar.count <= 0:
             continue
-        h = (float(bar.count) / max_c) * count_extent_eff
+        h = (float(bar.count) / scale_denom) * count_extent_eff
         xy = diff_inset_bar_polygon_vertices(bar.e0, bar.e1, h, diagonal_pos)
         poly = Polygon(
             xy,
@@ -557,6 +589,7 @@ def draw_scatter_marginals_into(
             diagonal_pos=float(opts.diff_inset_center),
             d_half_extent=float(opts.diff_inset_d_half_extent),
             count_extent=opts.diff_inset_count_extent,
+            count_ylim=opts.diff_inset_count_ylim,
             n_bins=int(opts.diff_hist_bins),
             show_xtick_labels=opts.diff_inset_xtick_labels,
             overflow_bins=opts.diff_inset_overflow_bins,

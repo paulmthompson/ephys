@@ -146,8 +146,81 @@ def test_scatter_marginals_options_rejects_invalid_lim() -> None:
 
 
 def test_diff_inset_default_count_extent() -> None:
-    """Auto count extent scales with bin width."""
-    assert diff_inset_default_count_extent(4.0, 4) == 1.7
+    """Auto count extent is independent of bin count."""
+    expected = (2.0 * 4.0 / 10.0) * 0.85
+    assert diff_inset_default_count_extent(4.0, 4) == pytest.approx(expected)
+    assert diff_inset_default_count_extent(4.0, 20) == pytest.approx(expected)
+
+
+def _inset_bar_heights(scatter_ax) -> list[float]:
+    """Euclidean height of each diff-inset bar polygon on the scatter axis."""
+    heights: list[float] = []
+    for patch in scatter_ax.patches:
+        if not isinstance(patch, Polygon):
+            continue
+        verts = np.asarray(patch.get_xy())
+        base_mid = 0.5 * (verts[0] + verts[1])
+        top_mid = 0.5 * (verts[2] + verts[3])
+        heights.append(float(np.linalg.norm(top_mid - base_mid)))
+    return heights
+
+
+def test_diff_inset_count_extent_independent_of_bins() -> None:
+    """Explicit count_extent keeps tallest bar height when bin count changes."""
+    x = np.array([0.0, 5.0, 10.0, 12.0, 14.0])
+    y = np.array([2.0, 5.0, 8.0, 9.0, 10.0])
+    data = ScatterMarginalsData(x=x, y=y)
+    base_kw = {
+        "diff_inset_center": 10.0,
+        "diff_inset_d_half_extent": 10.0,
+        "diff_inset_count_extent": 4.0,
+    }
+    heights_by_bins: dict[int, float] = {}
+    for n_bins in (4, 20):
+        options = ScatterMarginalsOptions(diff_hist_bins=n_bins, **base_kw)
+        fig = plt.figure(figsize=(3.0, 3.0))
+        cell = fig.add_gridspec(1, 1)[0, 0]
+        draw_scatter_marginals_into(fig, cell, data, options)
+        heights = _inset_bar_heights(fig.axes[0])
+        assert heights
+        heights_by_bins[n_bins] = max(heights)
+        plt.close(fig)
+    assert heights_by_bins[4] == pytest.approx(heights_by_bins[20], rel=1e-6)
+
+
+def test_diff_inset_count_ylim_caps_bar_height() -> None:
+    """count_ylim raises the scaling denominator so bars stay shorter."""
+    x = np.repeat(0.0, 20)
+    y = np.repeat(5.0, 20)
+    data = ScatterMarginalsData(x=x, y=y)
+    shared_kw = {
+        "diff_inset_center": 10.0,
+        "diff_inset_d_half_extent": 10.0,
+        "diff_inset_count_extent": 4.0,
+        "diff_hist_bins": 4,
+    }
+    fig_auto = plt.figure(figsize=(3.0, 3.0))
+    draw_scatter_marginals_into(
+        fig_auto,
+        fig_auto.add_gridspec(1, 1)[0, 0],
+        data,
+        ScatterMarginalsOptions(**shared_kw),
+    )
+    auto_h = max(_inset_bar_heights(fig_auto.axes[0]))
+    plt.close(fig_auto)
+
+    fig_capped = plt.figure(figsize=(3.0, 3.0))
+    draw_scatter_marginals_into(
+        fig_capped,
+        fig_capped.add_gridspec(1, 1)[0, 0],
+        data,
+        ScatterMarginalsOptions(diff_inset_count_ylim=80.0, **shared_kw),
+    )
+    capped_h = max(_inset_bar_heights(fig_capped.axes[0]))
+    plt.close(fig_capped)
+
+    assert auto_h == pytest.approx(4.0, rel=1e-6)
+    assert capped_h == pytest.approx(1.0, rel=1e-6)
 
 
 def test_draw_scatter_marginals_into_creates_axes() -> None:
