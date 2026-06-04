@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.gridspec import GridSpecFromSubplotSpec, SubplotSpec
 from matplotlib.patches import Polygon
+from matplotlib.ticker import MaxNLocator
 from pydantic import BaseModel, Field, model_validator
 
 if TYPE_CHECKING:
@@ -60,6 +61,7 @@ class ScatterMarginalsOptions(BaseModel):
     diff_inset_d_half_extent: float = Field(default=5.0, gt=0.0)
     diff_inset_count_extent: float | None = Field(default=None, gt=0.0)
     diff_inset_xtick_labels: bool = False
+    diff_inset_overflow_bins: bool = False
     point_marker: str = "o"
     point_size: float = Field(default=16.0, gt=0.0)
     point_facecolor: str = "none"
@@ -132,6 +134,34 @@ def _clip_to_limits(values: np.ndarray, lo: float, hi: float) -> np.ndarray:
     return v[(v >= float(lo)) & (v <= float(hi))]
 
 
+def _limits_are_equal(
+    lo_x: float,
+    hi_x: float,
+    lo_y: float,
+    hi_y: float,
+) -> bool:
+    """True when scatter x and y share the same numeric limits."""
+    return (
+        np.isclose(lo_x, lo_y, rtol=0.0, atol=1e-12)
+        and np.isclose(hi_x, hi_y, rtol=0.0, atol=1e-12)
+    )
+
+
+def shared_scatter_axis_ticks(lo: float, hi: float, *, nbins: int = 6) -> np.ndarray:
+    """Nice tick positions for both axes when x/y limits match."""
+    ticks = np.asarray(MaxNLocator(nbins=int(nbins)).tick_values(lo, hi), dtype=np.float64)
+    return ticks[(ticks >= float(lo)) & (ticks <= float(hi))]
+
+
+def _apply_shared_scatter_ticks(ax: Axes, lo: float, hi: float, *, nbins: int = 6) -> None:
+    """Set identical x and y tick positions (matplotlib may otherwise differ)."""
+    ticks = shared_scatter_axis_ticks(lo, hi, nbins=nbins)
+    if ticks.size == 0:
+        ticks = np.array([float(lo), float(hi)], dtype=np.float64)
+    ax.set_xticks(ticks)
+    ax.set_yticks(ticks)
+
+
 def marginal_histogram_edges(
     lo_x: float,
     hi_x: float,
@@ -159,6 +189,55 @@ def diff_inset_symmetric_edges(d_half_extent: float, n_bins: int) -> np.ndarray:
     """Bin edges for ``y - x`` over ``[-extent, +extent]``."""
     ext = float(d_half_extent)
     return np.linspace(-ext, ext, int(n_bins) + 1, dtype=np.float64)
+
+
+def diff_inset_bin_width(d_half_extent: float, n_bins: int) -> float:
+    """Width of one inset bin along the ``y - x`` axis."""
+    n = max(int(n_bins), 1)
+    return (2.0 * float(d_half_extent)) / float(n)
+
+
+class DiffInsetBar(NamedTuple):
+    """One inset bar: difference edges ``[e0, e1]`` and sample count."""
+
+    e0: float
+    e1: float
+    count: int
+    is_overflow: bool
+
+
+def diff_inset_bars(
+    diffs: np.ndarray,
+    d_half_extent: float,
+    n_bins: int,
+    *,
+    overflow_bins: bool,
+) -> list[DiffInsetBar]:
+    """Build inset bars for the core range and optional low/high overflow tails."""
+    d = np.asarray(diffs, dtype=np.float64)
+    ext = float(d_half_extent)
+    edges = diff_inset_symmetric_edges(ext, n_bins)
+    core_counts, _ = np.histogram(d, bins=edges)
+    bars: list[DiffInsetBar] = []
+    if overflow_bins:
+        width = diff_inset_bin_width(ext, n_bins)
+        low_n = int(np.sum(d < -ext))
+        high_n = int(np.sum(d > ext))
+        bars.append(DiffInsetBar(-ext - width, -ext, low_n, True))
+    for k in range(int(core_counts.size)):
+        bars.append(
+            DiffInsetBar(
+                float(edges[k]),
+                float(edges[k + 1]),
+                int(core_counts[k]),
+                False,
+            )
+        )
+    if overflow_bins:
+        width = diff_inset_bin_width(ext, n_bins)
+        high_n = int(np.sum(d > ext))
+        bars.append(DiffInsetBar(ext, ext + width, high_n, True))
+    return bars
 
 
 def diff_inset_default_count_extent(d_half_extent: float, n_bins: int) -> float:
@@ -196,13 +275,21 @@ def _draw_diff_inset_axis(
     *,
     diagonal_pos: float,
     d_half_extent: float,
+    n_bins: int,
+    overflow_bins: bool = False,
     show_xtick_labels: bool = False,
     count_extent: float | None = None,
 ) -> None:
     """Draw the inset difference baseline in scatter data coordinates."""
     ext = float(d_half_extent)
-    x0, y0 = diff_inset_xy_for_difference(-ext, diagonal_pos)
-    x1, y1 = diff_inset_xy_for_difference(ext, diagonal_pos)
+    d_lo = -ext
+    d_hi = ext
+    if overflow_bins:
+        width = diff_inset_bin_width(ext, n_bins)
+        d_lo -= width
+        d_hi += width
+    x0, y0 = diff_inset_xy_for_difference(d_lo, diagonal_pos)
+    x1, y1 = diff_inset_xy_for_difference(d_hi, diagonal_pos)
     axis_kw = {
         "color": "0.35",
         "linewidth": 0.9,
@@ -216,7 +303,7 @@ def _draw_diff_inset_axis(
     tick_len = 0.12 * scale
     tick = tick_len * _U_PARA
     label_shift = -1.15 * tick_len * _U_PARA
-    for d in (-ext, ext):
+    for d in (-ext, ext):  # tick labels mark the nominal range, not tail edges
         px, py = diff_inset_xy_for_difference(d, diagonal_pos)
         ax.plot(
             [px - tick[0], px + tick[0]],
@@ -249,18 +336,28 @@ def _draw_y_minus_x_hist_inset(
     count_extent: float | None,
     n_bins: int,
     show_xtick_labels: bool = False,
+    overflow_bins: bool = False,
 ) -> None:
     """Draw a y-x histogram inset centered at ``y - x = 0`` on the unity line.
 
-    ``diagonal_pos`` sets the anchor ``(s, s)`` on ``y = x``. Bin edges span
-    ``[-extent, +extent]`` in difference units. Bars grow along ``(1, 1)``.
+    ``diagonal_pos`` sets the anchor ``(s, s)`` on ``y = x``. Core bin edges span
+    ``[-extent, +extent]``. With ``overflow_bins``, low/high tail bars (one bin wide,
+    just outside that range) count ``y - x < -extent`` and ``y - x > +extent``.
+    Bars grow along ``(1, 1)``; tail bars use lighter fill.
     """
     diffs = (y - x).astype(np.float64, copy=False)
     diffs = diffs[np.isfinite(diffs)]
     if diffs.size < 1:
         return
-    edges = diff_inset_symmetric_edges(d_half_extent, n_bins)
-    counts, _ = np.histogram(diffs, bins=edges)
+    bars = diff_inset_bars(
+        diffs,
+        d_half_extent,
+        n_bins,
+        overflow_bins=overflow_bins,
+    )
+    counts_all = [bar.count for bar in bars]
+    if not counts_all or max(counts_all) <= 0:
+        return
     count_extent_eff = (
         float(count_extent)
         if count_extent is not None
@@ -270,25 +367,24 @@ def _draw_y_minus_x_hist_inset(
         ax,
         diagonal_pos=float(diagonal_pos),
         d_half_extent=d_half_extent,
+        n_bins=n_bins,
+        overflow_bins=overflow_bins,
         show_xtick_labels=show_xtick_labels,
         count_extent=count_extent_eff,
     )
-    if counts.size == 0 or int(np.max(counts)) <= 0:
-        return
-    max_c = float(np.max(counts))
-    for k in range(int(counts.size)):
-        if counts[k] <= 0:
+    max_c = float(max(counts_all))
+    for bar in bars:
+        if bar.count <= 0:
             continue
-        e0, e1 = float(edges[k]), float(edges[k + 1])
-        h = (float(counts[k]) / max_c) * count_extent_eff
-        xy = diff_inset_bar_polygon_vertices(e0, e1, h, diagonal_pos)
+        h = (float(bar.count) / max_c) * count_extent_eff
+        xy = diff_inset_bar_polygon_vertices(bar.e0, bar.e1, h, diagonal_pos)
         poly = Polygon(
             xy,
             closed=True,
             facecolor="k",
             edgecolor="k",
             linewidth=0.25,
-            alpha=0.9,
+            alpha=0.55 if bar.is_overflow else 0.9,
             zorder=6,
             transform=ax.transData,
             clip_on=True,
@@ -394,6 +490,8 @@ def draw_scatter_marginals_into(
 
     ax_scatter.set_xlim(lo_x, hi_x)
     ax_scatter.set_ylim(lo_y, hi_y)
+    if _limits_are_equal(lo_x, hi_x, lo_y, hi_y):
+        _apply_shared_scatter_ticks(ax_scatter, lo_x, hi_x)
     ax_scatter.set_aspect("equal", adjustable="box")
     ax_scatter.scatter(
         rx,
@@ -461,4 +559,5 @@ def draw_scatter_marginals_into(
             count_extent=opts.diff_inset_count_extent,
             n_bins=int(opts.diff_hist_bins),
             show_xtick_labels=opts.diff_inset_xtick_labels,
+            overflow_bins=opts.diff_inset_overflow_bins,
         )

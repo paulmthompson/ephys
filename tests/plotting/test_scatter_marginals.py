@@ -15,12 +15,14 @@ from ephys.plotting.scatter_marginals import (
     ScatterMarginalsData,
     ScatterMarginalsOptions,
     diff_inset_bar_polygon_vertices,
+    diff_inset_bars,
     diff_inset_default_count_extent,
     diff_inset_symmetric_edges,
     diff_inset_xy_for_difference,
     draw_scatter_marginals_into,
     marginal_histogram_edges,
     resolve_scatter_axis_limits,
+    shared_scatter_axis_ticks,
     unity_line_segment,
 )
 
@@ -31,6 +33,40 @@ def test_diff_inset_xy_for_difference() -> None:
     assert diff_inset_xy_for_difference(-10.0, 15.0) == (20.0, 10.0)
     x, y = diff_inset_xy_for_difference(4.0, 15.0)
     assert y - x == 4.0
+
+
+def test_diff_inset_bars_overflow() -> None:
+    """Overflow tails count values outside the nominal extent."""
+    diffs = np.array([-20.0, -5.0, 0.0, 5.0, 20.0])
+    bars = diff_inset_bars(diffs, 10.0, 4, overflow_bins=True)
+    assert bars[0].is_overflow and bars[0].count == 1
+    assert bars[-1].is_overflow and bars[-1].count == 1
+    core_total = sum(b.count for b in bars if not b.is_overflow)
+    assert core_total == 3
+
+
+def test_diff_inset_bars_no_overflow_excludes_outliers() -> None:
+    """Without overflow, out-of-range values are not counted."""
+    diffs = np.array([-20.0, 0.0, 20.0])
+    bars = diff_inset_bars(diffs, 10.0, 4, overflow_bins=False)
+    assert sum(b.count for b in bars) == 1
+
+
+def test_draw_diff_inset_overflow_bar_rendered() -> None:
+    """An out-of-range difference produces a tail polygon when enabled."""
+    data = ScatterMarginalsData(x=np.array([0.0]), y=np.array([25.0]))
+    options = ScatterMarginalsOptions(
+        diff_inset_center=10.0,
+        diff_inset_d_half_extent=10.0,
+        diff_inset_overflow_bins=True,
+        diff_hist_bins=4,
+    )
+    fig = plt.figure(figsize=(3.0, 3.0))
+    cell = fig.add_gridspec(1, 1)[0, 0]
+    draw_scatter_marginals_into(fig, cell, data, options)
+    scatter_ax = fig.axes[0]
+    assert any(isinstance(p, Polygon) for p in scatter_ax.patches)
+    plt.close(fig)
 
 
 def test_diff_inset_symmetric_edges() -> None:
@@ -68,6 +104,27 @@ def test_resolve_scatter_axis_limits_separate() -> None:
     )
     assert lo_x == 0.0 and hi_x == 10.0
     assert lo_y == 0.0 and hi_y == 30.0
+
+
+def test_shared_scatter_axis_ticks_within_limits() -> None:
+    """Shared tick helper stays inside axis bounds."""
+    ticks = shared_scatter_axis_ticks(0.0, 20.0, nbins=6)
+    assert ticks.size >= 2
+    assert ticks[0] >= 0.0
+    assert ticks[-1] <= 20.0
+
+
+def test_equal_scatter_limits_use_matching_tick_count() -> None:
+    """Equal x/y limits get the same tick positions on both axes."""
+    data = ScatterMarginalsData(x=np.array([5.0, 15.0]), y=np.array([6.0, 14.0]))
+    options = ScatterMarginalsOptions(scatter_lim=(0.0, 20.0))
+    fig = plt.figure(figsize=(4.0, 4.0))
+    cell = fig.add_gridspec(1, 1)[0, 0]
+    draw_scatter_marginals_into(fig, cell, data, options)
+    scatter_ax = fig.axes[0]
+    assert len(scatter_ax.get_xticks()) == len(scatter_ax.get_yticks())
+    assert np.allclose(scatter_ax.get_xticks(), scatter_ax.get_yticks())
+    plt.close(fig)
 
 
 def test_marginal_histogram_edges_match_scatter_limits() -> None:
