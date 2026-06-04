@@ -1,4 +1,4 @@
-"""Scatter plot with external marginal histograms and a y−x difference inset."""
+"""Scatter plot with external marginal histograms and a y-x difference inset."""
 
 from __future__ import annotations
 
@@ -18,14 +18,23 @@ class ScatterMarginalsData:
     x: np.ndarray
     y: np.ndarray
 
+    def __post_init__(self) -> None:
+        """Validate that x and y are numpy arrays of the same length."""
+        if self.x.shape != self.y.shape:
+            raise ValueError("x and y must have the same shape")
+        if self.x.size == 0:
+            raise ValueError("x and y must have at least one element")
+        if not np.all(np.isfinite(self.x)) or not np.all(np.isfinite(self.y)):
+            raise ValueError("x and y must be finite")
+
 
 class ScatterMarginalsOptions(BaseModel):
     """Layout, histogram bins, axis labels, and scatter point styling."""
 
     model_config = {"frozen": True}
 
-    marginal_height_ratio: float = 0.22
-    marginal_width_ratio: float = 0.22
+    marginal_height_ratio: float = Field(default=0.22, gt=0.0)
+    marginal_width_ratio: float = Field(default=0.22, gt=0.0)
     xlabel: str = "X"
     ylabel: str = "Y"
     marginal_hist_bins: int = Field(default=10, ge=1)
@@ -43,7 +52,7 @@ def _draw_y_minus_x_hist_45deg_inset(
     *,
     n_bins: int,
 ) -> None:
-    """Draw a small y−x histogram in the scatter panel's upper right.
+    """Draw a small y-x histogram in the scatter panel's upper right.
 
     Bin positions run along ``(1, -1)`` in axes-fraction space so the local
     histogram abscissa is perpendicular to the unity direction ``(1, 1)``.
@@ -125,7 +134,7 @@ def draw_scatter_marginals_into(
     data: ScatterMarginalsData,
     options: ScatterMarginalsOptions | None = None,
 ) -> None:
-    """Scatter (x vs. y) with external marginals and a 45° y−x diff inset.
+    """Scatter (x vs. y) with external marginals and a 45° y-x diff inset.
 
     Parameters
     ----------
