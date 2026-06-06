@@ -204,11 +204,11 @@ def draw_forest_grid(
 
     n_cols = len(options.columns)
     gs_forest = cell.subgridspec(1, n_cols, wspace=options.wspace)
-    
+
     axes = []
     for i, col_spec in enumerate(options.columns):
         ax = fig.add_subplot(gs_forest[0, i])
-        
+
         plot_forest(
             ax,
             df,
@@ -219,10 +219,10 @@ def draw_forest_grid(
             detach_y_spine=True,
             xlabel=col_spec.xlabel,
         )
-        
+
         if i > 0:
             ax.set_yticklabels([])
-            
+
         axes.append(ax)
-        
+
     return axes

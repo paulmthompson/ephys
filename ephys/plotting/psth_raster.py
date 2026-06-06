@@ -20,6 +20,7 @@ import matplotlib.axes
 import numpy as np
 from pydantic import BaseModel, Field
 
+
 class RasterOptions(BaseModel):
     """Configuration for raster plots."""
 
@@ -54,9 +55,6 @@ class PsthOptions(BaseModel):
         gt=0,
         description="PSTH y-axis scale limit.",
     )
-    
-
-
 
 
 def plot_psth(
