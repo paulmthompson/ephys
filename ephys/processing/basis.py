@@ -138,3 +138,61 @@ def build_basis(options: AnyBasisOptions) -> np.ndarray:
 
     msg = f"Unknown basis options type: {type(options)}"
     raise TypeError(msg)
+
+
+def causal_basis_columns(
+    signal: np.ndarray,
+    basis: np.ndarray,
+) -> list[np.ndarray]:
+    """Apply causal temporal basis convolutions to a 1D signal.
+
+    Parameters
+    ----------
+    signal : np.ndarray
+        One-dimensional predictor trace (e.g. continuous kinematics, or
+        impulse train).
+    basis : np.ndarray
+        ``(n_lags, n_basis)`` temporal basis matrix, where the first row
+        represents zero lag.
+
+    Returns
+    -------
+    list[np.ndarray]
+        List of ``n_basis`` arrays, each the same length as ``signal``,
+        containing the causal convolution of the signal with each column of the
+        basis.
+    """
+    return [
+        np.convolve(signal, basis[:, idx], mode="full")[: len(signal)]
+        for idx in range(basis.shape[1])
+    ]
+
+
+def history_basis_columns(
+    spikes: np.ndarray,
+    basis: np.ndarray,
+) -> list[np.ndarray]:
+    """Compute causal spike history predictor columns.
+
+    Lag the spike train by one bin to avoid using the current bin's spike to
+    predict itself, and then apply causal temporal basis convolutions.
+
+    Parameters
+    ----------
+    spikes : np.ndarray
+        One-dimensional binary array of spike occurrences.
+    basis : np.ndarray
+        ``(n_lags, n_basis)`` temporal basis matrix. The first row (zero
+        lag into the basis) is applied to the one-bin delayed spike train,
+        so it measures the effect of the immediately preceding time bin.
+
+    Returns
+    -------
+    list[np.ndarray]
+        List of ``n_basis`` arrays representing the convoluted spike history,
+        each the same length as the input ``spikes`` array.
+    """
+    if len(spikes) == 0:
+        return [np.zeros(0, dtype=float) for _ in range(basis.shape[1])]
+    lagged = np.concatenate(([0.0], spikes[:-1]))
+    return causal_basis_columns(lagged, basis)

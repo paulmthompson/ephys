@@ -30,7 +30,7 @@ def main() -> None:
         diff_inset_count_extent=None,
         point_size=28.0,
         point_edgecolor="0.25",
-        scatter_lim=(0.0, 25.0)
+        scatter_lim=(0.0, 25.0),
     )
 
     fig = plt.figure(figsize=(5.5, 5.5))
