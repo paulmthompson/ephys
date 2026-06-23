@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
+import pydantic
+from typing import Literal, Union
 
 
 def raised_cosine_basis(n_lags: int, n_basis: int) -> np.ndarray:
@@ -92,3 +94,47 @@ def log_raised_cosine_basis(n_lags: int, n_basis: int) -> np.ndarray:
         denom = values.sum()
         basis[:, idx] = values / denom if denom > 0.0 else values
     return basis
+
+
+class BasisOptions(pydantic.BaseModel):
+    """Base options for temporal basis functions."""
+
+    n_lags: int = pydantic.Field(..., gt=0, description="Number of lag bins.")
+    n_basis: int = pydantic.Field(..., gt=0, description="Number of basis columns.")
+
+
+class RaisedCosineBasisOptions(BasisOptions):
+    """Options for a standard raised-cosine basis."""
+
+    type: Literal["raised_cosine"] = "raised_cosine"
+
+
+class LogRaisedCosineBasisOptions(BasisOptions):
+    """Options for a log-spaced raised-cosine basis."""
+
+    type: Literal["log_raised_cosine"] = "log_raised_cosine"
+
+
+AnyBasisOptions = Union[RaisedCosineBasisOptions, LogRaisedCosineBasisOptions]
+
+
+def build_basis(options: AnyBasisOptions) -> np.ndarray:
+    """Generate a basis matrix from a Pydantic options structure.
+
+    Parameters
+    ----------
+    options
+        Configuration specifying the basis type and shape parameters.
+
+    Returns
+    -------
+    np.ndarray
+        The generated basis matrix.
+    """
+    if isinstance(options, RaisedCosineBasisOptions):
+        return raised_cosine_basis(options.n_lags, options.n_basis)
+    if isinstance(options, LogRaisedCosineBasisOptions):
+        return log_raised_cosine_basis(options.n_lags, options.n_basis)
+
+    msg = f"Unknown basis options type: {type(options)}"
+    raise TypeError(msg)
