@@ -75,7 +75,15 @@ def log_raised_cosine_basis(n_lags: int, n_basis: int) -> np.ndarray:
         raise ValueError(msg)
     x = np.log1p(np.arange(n_lags, dtype=float))
     centers = np.linspace(float(x[0]), float(x[-1]), n_basis)
-    width = 1.0 if n_basis == 1 else centers[1] - centers[0]
+    if n_basis == 1:
+        width = 1.0
+    else:
+        width = centers[1] - centers[0]
+        if width == 0.0:
+            # Degenerate axis (e.g., n_lags == 1): place all mass at lag 0.
+            basis = np.zeros((n_lags, n_basis), dtype=float)
+            basis[0, :] = 1.0
+            return basis
     basis = np.zeros((n_lags, n_basis), dtype=float)
     for idx, center in enumerate(centers):
         phase = (x - center) / width
