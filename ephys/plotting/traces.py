@@ -28,7 +28,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.gridspec import SubplotSpec
 from matplotlib.transforms import Transform, blended_transform_factory
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from ephys.processing.envelope import get_min_max_envelope
 

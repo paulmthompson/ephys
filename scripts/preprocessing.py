@@ -1,9 +1,9 @@
 import numpy as np
-from pathlib import Path
 from scipy.signal import butter, sosfiltfilt
 
 from ephys.data_wrangling import intan
 from ephys.processing.zca import apply_zca_whitening
+
 
 def preprocess_intan_to_zca(
     input_filepath,
