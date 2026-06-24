@@ -239,8 +239,11 @@ def _log_lag_knot_params(
             width_s = np.full(n_lag_basis, dt_s)
             return centers_s, width_s
     centers_s = np.expm1(centers_x) * dt_s
+    lower_s = np.expm1(centers_x - width_x) * dt_s
     upper_s = np.expm1(centers_x + width_x) * dt_s
-    width_s = np.maximum(upper_s - centers_s, dt_s)
+    width_s = 0.5 * (upper_s - lower_s)
+    # Signed event bases need pre-onset support from post-onset knots.
+    width_s = np.maximum(width_s, 1.5 * dt_s)
     return centers_s, width_s
 
 
