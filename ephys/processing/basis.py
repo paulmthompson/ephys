@@ -210,13 +210,71 @@ def _linear_lag_knot_params(
     if n_lags <= 0 or n_lag_basis <= 0:
         msg = "n_lags and n_lag_basis must be positive"
         raise ValueError(msg)
-    lag_times_s = np.arange(n_lags, dtype=float) * dt_s
-    centers_s = np.linspace(float(lag_times_s[0]), float(lag_times_s[-1]), n_lag_basis)
+    lag_max_s = n_lags * dt_s
+    centers_s = np.linspace(0.0, lag_max_s, n_lag_basis)
     if n_lag_basis == 1:
-        width_s = np.full(1, lag_times_s[-1] - lag_times_s[0] + dt_s)
+        width_s = np.full(1, lag_max_s)
     else:
         width_s = np.full(n_lag_basis, centers_s[1] - centers_s[0])
     return centers_s, width_s
+
+
+def signed_event_knot_centers_s(
+    n_leads: int,
+    n_lags: int,
+    n_lead_basis: int,
+    n_lag_basis: int,
+    *,
+    lag_kind: Literal["raised_cosine", "log_raised_cosine"],
+    lead_s: float = 0.0,
+) -> np.ndarray:
+    """Return analytic knot-center times in seconds for a signed event basis.
+
+    Parameters
+    ----------
+    n_leads
+        Lead bins before the event-aligned center (τ < 0).
+    n_lags
+        Lag bins at and after the center (τ = 0 .. n_lags - 1).
+    n_lead_basis
+        Number of basis columns on the lead axis when ``n_leads > 0``.
+    n_lag_basis
+        Number of basis columns on the lag axis.
+    lag_kind
+        Knot placement for the post-onset half.
+    lead_s
+        Pre-event lead window duration in seconds.
+
+    Returns
+    -------
+    np.ndarray
+        One center time per basis column (lead columns first, then lag).
+
+    Raises
+    ------
+    ValueError
+        If dimensions are invalid or lead settings are inconsistent.
+    """
+    if n_lags <= 0 or n_lag_basis <= 0:
+        msg = "n_lags and n_lag_basis must be positive"
+        raise ValueError(msg)
+    if n_leads > 0:
+        if n_lead_basis <= 0:
+            msg = "n_lead_basis must be positive when n_leads > 0"
+            raise ValueError(msg)
+        if lead_s <= 0.0:
+            msg = "lead_s must be positive when n_leads > 0"
+            raise ValueError(msg)
+        dt_s = lead_s / n_leads
+        lead_centers_s, _ = _linear_lead_knot_params(n_lead_basis, lead_s)
+    else:
+        dt_s = 1.0
+        lead_centers_s = np.array([], dtype=float)
+    if lag_kind == "raised_cosine":
+        lag_centers_s, _ = _linear_lag_knot_params(n_lags, n_lag_basis, dt_s)
+    else:
+        lag_centers_s, _ = _log_lag_knot_params(n_lags, n_lag_basis, dt_s)
+    return np.concatenate([lead_centers_s, lag_centers_s])
 
 
 def _log_lag_knot_params(

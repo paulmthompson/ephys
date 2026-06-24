@@ -54,6 +54,40 @@ def test_signed_basis_matches_causal_log_when_no_lead() -> None:
     )
 
 
+def test_signed_onset_knots_match_uniform_half_ms_grid() -> None:
+    """NTNG1 onset config places knots every 0.5 ms from -2 ms to +5 ms."""
+    lead_s = 0.002
+    lag_s = 0.005
+    dt_s = 0.0001
+    n_leads = int(round(lead_s / dt_s))
+    n_lags = int(round(lag_s / dt_s))
+    n_lead_basis = 4
+    n_lag_basis = 11
+    basis = signed_event_basis(
+        n_leads,
+        n_lags,
+        n_lead_basis=n_lead_basis,
+        n_lag_basis=n_lag_basis,
+        lag_kind="raised_cosine",
+        lead_s=lead_s,
+    )
+    row_times_ms = (np.arange(n_leads + n_lags, dtype=float) - n_leads) * dt_s * 1000.0
+    knot_spacing_ms = lead_s * 1000.0 / n_lead_basis
+    expected_lead_ms = (
+        -lead_s * 1000.0 * (np.arange(n_lead_basis, 0, -1, dtype=float) / n_lead_basis)
+    )
+    expected_lag_ms = np.linspace(0.0, lag_s * 1000.0, n_lag_basis)
+    expected_ms = np.concatenate([expected_lead_ms, expected_lag_ms])
+
+    for col in range(basis.shape[1]):
+        idx = int(np.argmax(basis[:, col]))
+        assert row_times_ms[idx] == pytest.approx(expected_ms[col], abs=0.15)
+
+    assert knot_spacing_ms == pytest.approx(0.5)
+    lag_spacing_ms = np.diff(expected_lag_ms)
+    np.testing.assert_allclose(lag_spacing_ms, knot_spacing_ms)
+
+
 def test_signed_basis_knots_overlap_at_seam() -> None:
     """Lead and lag knots both contribute near contact time."""
     lead_s = 0.002
