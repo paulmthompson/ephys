@@ -125,6 +125,42 @@ class BasisOptions(pydantic.BaseModel):
             "``n_leads > 0`` so lead knots are spaced evenly in time."
         ),
     )
+    lag_offset_s: float = pydantic.Field(
+        0.0,
+        ge=0.0,
+        description=(
+            "Dead time in seconds before the lag basis begins (τ = 0 stays "
+            "at the event or current bin; filter support starts at this offset)."
+        ),
+    )
+
+
+def lag_offset_bins(lag_offset_s: float, dt_s: float) -> int:
+    """Convert a lag-offset duration to an integer bin count.
+
+    Parameters
+    ----------
+    lag_offset_s
+        Seconds of dead time before lag support begins.
+    dt_s
+        Design-matrix bin width in seconds.
+
+    Returns
+    -------
+    int
+        Rounded offset in bins (zero when ``lag_offset_s`` is zero).
+
+    Raises
+    ------
+    ValueError
+        If ``dt_s`` is not positive.
+    """
+    if lag_offset_s <= 0.0:
+        return 0
+    if dt_s <= 0.0:
+        msg = "dt_s must be positive"
+        raise ValueError(msg)
+    return int(round(lag_offset_s / dt_s))
 
 
 class RaisedCosineBasisOptions(BasisOptions):
@@ -205,13 +241,15 @@ def _linear_lag_knot_params(
     n_lags: int,
     n_lag_basis: int,
     dt_s: float,
+    *,
+    lag_offset_s: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return linear lag knot centers and widths in seconds."""
     if n_lags <= 0 or n_lag_basis <= 0:
         msg = "n_lags and n_lag_basis must be positive"
         raise ValueError(msg)
     lag_max_s = n_lags * dt_s
-    centers_s = np.linspace(0.0, lag_max_s, n_lag_basis)
+    centers_s = np.linspace(lag_offset_s, lag_offset_s + lag_max_s, n_lag_basis)
     if n_lag_basis == 1:
         width_s = np.full(1, lag_max_s)
     else:
@@ -227,6 +265,7 @@ def signed_event_knot_centers_s(
     *,
     lag_kind: Literal["raised_cosine", "log_raised_cosine"],
     lead_s: float = 0.0,
+    lag_offset_s: float = 0.0,
 ) -> np.ndarray:
     """Return analytic knot-center times in seconds for a signed event basis.
 
@@ -271,9 +310,19 @@ def signed_event_knot_centers_s(
         dt_s = 1.0
         lead_centers_s = np.array([], dtype=float)
     if lag_kind == "raised_cosine":
-        lag_centers_s, _ = _linear_lag_knot_params(n_lags, n_lag_basis, dt_s)
+        lag_centers_s, _ = _linear_lag_knot_params(
+            n_lags,
+            n_lag_basis,
+            dt_s,
+            lag_offset_s=lag_offset_s,
+        )
     else:
-        lag_centers_s, _ = _log_lag_knot_params(n_lags, n_lag_basis, dt_s)
+        lag_centers_s, _ = _log_lag_knot_params(
+            n_lags,
+            n_lag_basis,
+            dt_s,
+            lag_offset_s=lag_offset_s,
+        )
     return np.concatenate([lead_centers_s, lag_centers_s])
 
 
@@ -281,6 +330,8 @@ def _log_lag_knot_params(
     n_lags: int,
     n_lag_basis: int,
     dt_s: float,
+    *,
+    lag_offset_s: float = 0.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return log-spaced lag knot centers and widths in seconds."""
     if n_lags <= 0 or n_lag_basis <= 0:
@@ -296,9 +347,9 @@ def _log_lag_knot_params(
             centers_s = np.zeros(n_lag_basis, dtype=float)
             width_s = np.full(n_lag_basis, dt_s)
             return centers_s, width_s
-    centers_s = np.expm1(centers_x) * dt_s
-    lower_s = np.expm1(centers_x - width_x) * dt_s
-    upper_s = np.expm1(centers_x + width_x) * dt_s
+    centers_s = np.expm1(centers_x) * dt_s + lag_offset_s
+    lower_s = np.expm1(centers_x - width_x) * dt_s + lag_offset_s
+    upper_s = np.expm1(centers_x + width_x) * dt_s + lag_offset_s
     width_s = 0.5 * (upper_s - lower_s)
     # Signed event bases need pre-onset support from post-onset knots.
     width_s = np.maximum(width_s, 1.5 * dt_s)
@@ -364,6 +415,7 @@ def signed_event_basis(
     *,
     lag_kind: Literal["raised_cosine", "log_raised_cosine"],
     lead_s: float = 0.0,
+    lag_offset_s: float = 0.0,
 ) -> np.ndarray:
     """Return a continuous signed event basis with overlapping knots.
 
@@ -429,9 +481,19 @@ def signed_event_basis(
         basis[:, idx] = _raised_cosine_on_times(row_times_s, center_s, lead_width_s)
 
     if lag_kind == "raised_cosine":
-        lag_centers_s, lag_widths_s = _linear_lag_knot_params(n_lags, n_lag_basis, dt_s)
+        lag_centers_s, lag_widths_s = _linear_lag_knot_params(
+            n_lags,
+            n_lag_basis,
+            dt_s,
+            lag_offset_s=lag_offset_s,
+        )
     else:
-        lag_centers_s, lag_widths_s = _log_lag_knot_params(n_lags, n_lag_basis, dt_s)
+        lag_centers_s, lag_widths_s = _log_lag_knot_params(
+            n_lags,
+            n_lag_basis,
+            dt_s,
+            lag_offset_s=lag_offset_s,
+        )
     for offset, (center_s, width_s) in enumerate(zip(lag_centers_s, lag_widths_s, strict=True)):
         col = n_lead_basis + offset
         basis[:, col] = _raised_cosine_on_times(row_times_s, center_s, width_s)
@@ -447,6 +509,7 @@ def split_signed_event_basis(
     *,
     lag_kind: Literal["raised_cosine", "log_raised_cosine"],
     lead_s: float = 0.0,
+    lag_offset_s: float = 0.0,
 ) -> np.ndarray:
     """Backward-compatible alias for :func:`signed_event_basis`."""
     return signed_event_basis(
@@ -456,6 +519,7 @@ def split_signed_event_basis(
         n_lag_basis,
         lag_kind=lag_kind,
         lead_s=lead_s,
+        lag_offset_s=lag_offset_s,
     )
 
 
@@ -466,6 +530,7 @@ def signed_raised_cosine_basis(
     *,
     n_lead_basis: int = 0,
     lead_s: float = 0.0,
+    lag_offset_s: float = 0.0,
 ) -> np.ndarray:
     """Return raised-cosine bases on a signed lag axis.
 
@@ -497,6 +562,7 @@ def signed_raised_cosine_basis(
         n_lag_basis,
         lag_kind="raised_cosine",
         lead_s=lead_s,
+        lag_offset_s=lag_offset_s,
     )
 
 
@@ -507,6 +573,7 @@ def signed_log_raised_cosine_basis(
     *,
     n_lead_basis: int = 0,
     lead_s: float = 0.0,
+    lag_offset_s: float = 0.0,
 ) -> np.ndarray:
     """Return log-spaced lag knots on a continuous signed event axis.
 
@@ -539,6 +606,7 @@ def signed_log_raised_cosine_basis(
         n_lag_basis,
         lag_kind="log_raised_cosine",
         lead_s=lead_s,
+        lag_offset_s=lag_offset_s,
     )
 
 
@@ -562,6 +630,7 @@ def build_basis(options: AnyBasisOptions) -> np.ndarray:
             options.n_basis,
             n_lead_basis=options.n_lead_basis,
             lead_s=options.lead_s,
+            lag_offset_s=options.lag_offset_s,
         )
     if isinstance(options, LogRaisedCosineBasisOptions):
         return signed_log_raised_cosine_basis(
@@ -570,6 +639,7 @@ def build_basis(options: AnyBasisOptions) -> np.ndarray:
             options.n_basis,
             n_lead_basis=options.n_lead_basis,
             lead_s=options.lead_s,
+            lag_offset_s=options.lag_offset_s,
         )
 
     msg = f"Unknown basis options type: {type(options)}"
@@ -581,6 +651,7 @@ def acausal_basis_columns(
     basis: np.ndarray,
     *,
     n_leads: int = 0,
+    lag_offset_bins: int = 0,
 ) -> list[np.ndarray]:
     """Apply two-sided temporal basis filtering to a 1D signal.
 
@@ -611,10 +682,21 @@ def acausal_basis_columns(
         msg = "n_leads must be non-negative"
         raise ValueError(msg)
     if n_leads == 0:
-        return [
-            np.convolve(signal, basis[:, idx], mode="full")[: len(signal)]
-            for idx in range(basis.shape[1])
-        ]
+        if lag_offset_bins <= 0:
+            return [
+                np.convolve(signal, basis[:, idx], mode="full")[: len(signal)]
+                for idx in range(basis.shape[1])
+            ]
+        outputs = []
+        for idx in range(basis.shape[1]):
+            kernel = np.concatenate(
+                (
+                    np.zeros(lag_offset_bins, dtype=float),
+                    basis[:, idx],
+                )
+            )
+            outputs.append(np.convolve(signal, kernel, mode="full")[: len(signal)])
+        return outputs
 
     n_rows, n_basis = basis.shape
     n_lags = n_rows - n_leads
@@ -642,6 +724,8 @@ def acausal_basis_columns(
 def causal_basis_columns(
     signal: np.ndarray,
     basis: np.ndarray,
+    *,
+    lag_offset_bins: int = 0,
 ) -> list[np.ndarray]:
     """Apply causal temporal basis convolutions to a 1D signal.
 
@@ -661,12 +745,19 @@ def causal_basis_columns(
         containing the causal convolution of the signal with each column of the
         basis.
     """
-    return acausal_basis_columns(signal, basis, n_leads=0)
+    return acausal_basis_columns(
+        signal,
+        basis,
+        n_leads=0,
+        lag_offset_bins=lag_offset_bins,
+    )
 
 
 def history_basis_columns(
     spikes: np.ndarray,
     basis: np.ndarray,
+    *,
+    lag_offset_bins: int = 0,
 ) -> list[np.ndarray]:
     """Compute causal spike history predictor columns.
 
@@ -691,4 +782,4 @@ def history_basis_columns(
     if len(spikes) == 0:
         return [np.zeros(0, dtype=float) for _ in range(basis.shape[1])]
     lagged = np.concatenate(([0.0], spikes[:-1]))
-    return causal_basis_columns(lagged, basis)
+    return causal_basis_columns(lagged, basis, lag_offset_bins=lag_offset_bins)
