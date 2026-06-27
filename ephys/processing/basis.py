@@ -163,6 +163,68 @@ def lag_offset_bins(lag_offset_s: float, dt_s: float) -> int:
     return int(round(lag_offset_s / dt_s))
 
 
+def lag_bins(lag_s: float, dt_s: float) -> int:
+    """Convert a lag window duration to an integer bin count.
+
+    Parameters
+    ----------
+    lag_s
+        Lag support in seconds.
+    dt_s
+        Design-matrix bin width in seconds.
+
+    Returns
+    -------
+    int
+        Number of lag bins (at least one).
+
+    Raises
+    ------
+    ValueError
+        If ``dt_s`` is not positive or the lag window is shorter than one bin.
+    """
+    if dt_s <= 0.0:
+        msg = "dt_s must be positive"
+        raise ValueError(msg)
+    bins = int(round(lag_s / dt_s))
+    if bins <= 0:
+        msg = "lag windows must be at least one bin"
+        raise ValueError(msg)
+    return bins
+
+
+def lead_bins(lead_s: float, dt_s: float) -> int:
+    """Convert a lead window duration to an integer bin count.
+
+    Parameters
+    ----------
+    lead_s
+        Lead support in seconds. Non-positive values yield zero bins.
+    dt_s
+        Design-matrix bin width in seconds.
+
+    Returns
+    -------
+    int
+        Number of lead bins, or zero when ``lead_s <= 0``.
+
+    Raises
+    ------
+    ValueError
+        If ``dt_s`` is not positive or ``lead_s > 0`` rounds to zero bins.
+    """
+    if lead_s <= 0.0:
+        return 0
+    if dt_s <= 0.0:
+        msg = "dt_s must be positive"
+        raise ValueError(msg)
+    bins = int(round(lead_s / dt_s))
+    if bins <= 0:
+        msg = "lead windows must be at least one bin when lead_s > 0"
+        raise ValueError(msg)
+    return bins
+
+
 class RaisedCosineBasisOptions(BasisOptions):
     """Options for a standard raised-cosine basis."""
 
@@ -324,6 +386,51 @@ def signed_event_knot_centers_s(
             lag_offset_s=lag_offset_s,
         )
     return np.concatenate([lead_centers_s, lag_centers_s])
+
+
+def lag_knot_centers_s(
+    n_lags: int,
+    n_lag_basis: int,
+    dt_s: float,
+    *,
+    lag_offset_s: float = 0.0,
+    lag_kind: Literal["raised_cosine", "log_raised_cosine"] = "raised_cosine",
+) -> np.ndarray:
+    """Return lag-only knot center times in seconds.
+
+    Parameters
+    ----------
+    n_lags
+        Lag bins at and after the event-aligned center.
+    n_lag_basis
+        Number of basis columns on the lag axis.
+    dt_s
+        Design-matrix bin width in seconds.
+    lag_offset_s
+        Dead time before lag support begins.
+    lag_kind
+        Knot placement for the lag axis.
+
+    Returns
+    -------
+    np.ndarray
+        One center time per lag basis column.
+    """
+    if lag_kind == "raised_cosine":
+        centers_s, _ = _linear_lag_knot_params(
+            n_lags,
+            n_lag_basis,
+            dt_s,
+            lag_offset_s=lag_offset_s,
+        )
+    else:
+        centers_s, _ = _log_lag_knot_params(
+            n_lags,
+            n_lag_basis,
+            dt_s,
+            lag_offset_s=lag_offset_s,
+        )
+    return centers_s
 
 
 def _log_lag_knot_params(
@@ -644,6 +751,47 @@ def build_basis(options: AnyBasisOptions) -> np.ndarray:
 
     msg = f"Unknown basis options type: {type(options)}"
     raise TypeError(msg)
+
+
+def build_signed_temporal_basis(
+    *,
+    lag_kind: Literal["raised_cosine", "log_raised_cosine"],
+    n_lags: int,
+    n_basis: int,
+    n_leads: int = 0,
+    n_lead_basis: int = 0,
+    lead_s: float = 0.0,
+    lag_offset_s: float = 0.0,
+) -> np.ndarray:
+    """Build a signed temporal basis matrix from scalar shape parameters.
+
+    Parameters
+    ----------
+    lag_kind
+        ``raised_cosine`` or ``log_raised_cosine`` lag-axis placement.
+    n_lags, n_basis
+        Lag bin count and number of lag basis columns.
+    n_leads, n_lead_basis, lead_s
+        Optional lead-window support before τ = 0.
+    lag_offset_s
+        Dead time before lag support begins.
+
+    Returns
+    -------
+    np.ndarray
+        Signed temporal basis matrix; see :func:`build_basis`.
+    """
+    common = {
+        "n_lags": n_lags,
+        "n_basis": n_basis,
+        "n_leads": n_leads,
+        "n_lead_basis": n_lead_basis,
+        "lead_s": lead_s,
+        "lag_offset_s": lag_offset_s,
+    }
+    if lag_kind == "raised_cosine":
+        return build_basis(RaisedCosineBasisOptions(**common))
+    return build_basis(LogRaisedCosineBasisOptions(**common))
 
 
 def acausal_basis_columns(
