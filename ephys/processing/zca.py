@@ -5,10 +5,311 @@ axis for arrays shaped ``(n_channels, n_samples)``. Used to decorrelate
 channels while staying close to the original waveform geometry.
 """
 
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
 import numpy as np
 
+from ephys.processing.filtering import (
+    DEFAULT_INTAN_BANDPASS_ORDER,
+    DEFAULT_INTAN_FS_HZ,
+    DEFAULT_INTAN_HIGHCUT_HZ,
+    DEFAULT_INTAN_LOWCUT_HZ,
+)
 
-def apply_zca_whitening(voltage_matrix, epsilon=10.0, rescale_amplitude=True, robust_cov=True):
+ZCA_FIT_NPZ_VERSION = 1
+_MAD_TO_STD = 1.4826
+
+__all__ = [
+    "ZCA_FIT_NPZ_VERSION",
+    "ZcaFit",
+    "apply_zca_fit",
+    "apply_zca_whitening",
+    "fit_zca_whitening",
+    "load_zca_fit_npz",
+    "save_zca_fit_npz",
+    "zca_matrix_from_covariance",
+]
+
+
+@dataclass(frozen=True)
+class ZcaFit:
+    """Session-level ZCA whitening parameters fit on bandpassed data.
+
+    Parameters
+    ----------
+    good_channels
+        Probe channel indices included in the fit (dead channels excluded).
+    covariance
+        Channel covariance matrix with shape ``(n_good, n_good)``.
+    channel_medians
+        Temporal medians per good channel from the fit recording.
+    mean_robust_std
+        Mean per-channel MAD scale used when ``rescale_amplitude`` is enabled.
+    epsilon
+        Eigenvalue regularizer used to build the whitening matrix.
+    robust_cov
+        Whether covariance was estimated with the all-channel artifact gate.
+    sampling_rate_hz, lowcut_hz, highcut_hz, filter_order
+        Bandpass provenance stored for validation at apply time.
+    """
+
+    good_channels: np.ndarray
+    covariance: np.ndarray
+    channel_medians: np.ndarray
+    mean_robust_std: float
+    epsilon: float
+    robust_cov: bool
+    sampling_rate_hz: float = DEFAULT_INTAN_FS_HZ
+    lowcut_hz: float = DEFAULT_INTAN_LOWCUT_HZ
+    highcut_hz: float = DEFAULT_INTAN_HIGHCUT_HZ
+    filter_order: int = DEFAULT_INTAN_BANDPASS_ORDER
+
+    def zca_matrix(self) -> np.ndarray:
+        """Return the whitening matrix derived from :attr:`covariance`."""
+        return zca_matrix_from_covariance(self.covariance, self.epsilon)
+
+    def validate_filter_params(
+        self,
+        *,
+        sampling_rate_hz: float,
+        lowcut_hz: float,
+        highcut_hz: float,
+        filter_order: int,
+    ) -> None:
+        """Raise if apply-time bandpass settings differ from the fit."""
+        checks = (
+            (self.sampling_rate_hz, sampling_rate_hz, "sampling_rate_hz"),
+            (self.lowcut_hz, lowcut_hz, "lowcut_hz"),
+            (self.highcut_hz, highcut_hz, "highcut_hz"),
+            (float(self.filter_order), float(filter_order), "filter_order"),
+        )
+        for expected, actual, name in checks:
+            if float(expected) != float(actual):
+                msg = (
+                    f"ZCA fit {name}={expected!r} does not match apply "
+                    f"setting {actual!r}"
+                )
+                raise ValueError(msg)
+
+    def row_index_for_channel(self, channel: int) -> int:
+        """Map a probe channel index to a row in the good-channel matrix."""
+        matches = np.flatnonzero(self.good_channels == int(channel))
+        if matches.size != 1:
+            msg = (
+                f"channel {channel} is not in ZCA fit good_channels "
+                f"{self.good_channels.tolist()}"
+            )
+            raise ValueError(msg)
+        return int(matches[0])
+
+
+def _validate_voltage_matrix(
+    voltage_matrix: np.ndarray,
+    *,
+    epsilon: float,
+    rescale_amplitude: bool | None = None,
+    robust_cov: bool | None = None,
+) -> tuple[int, int]:
+    """Validate a ``(n_channels, n_samples)`` float voltage matrix."""
+    if not isinstance(voltage_matrix, np.ndarray):
+        msg = (
+            f"voltage_matrix must be a numpy.ndarray, got "
+            f"{type(voltage_matrix).__name__!r}"
+        )
+        raise TypeError(msg)
+    if voltage_matrix.ndim != 2:
+        msg = (
+            "voltage_matrix must have shape (n_channels, n_samples); "
+            f"got ndim={voltage_matrix.ndim}"
+        )
+        raise ValueError(msg)
+    n_channels, n_samples = voltage_matrix.shape
+    if n_channels < 1 or n_samples < 1:
+        msg = (
+            "voltage_matrix must have at least one channel and one sample; "
+            f"got shape {voltage_matrix.shape!r}"
+        )
+        raise ValueError(msg)
+    if not np.issubdtype(voltage_matrix.dtype, np.floating):
+        msg = (
+            f"voltage_matrix must have a floating-point dtype; got "
+            f"{voltage_matrix.dtype!r}"
+        )
+        raise TypeError(msg)
+    if epsilon <= 0:
+        msg = f"epsilon must be positive, got {epsilon!r}"
+        raise ValueError(msg)
+    if rescale_amplitude is not None and not isinstance(
+        rescale_amplitude,
+        (bool, np.bool_),
+    ):
+        msg = (
+            f"rescale_amplitude must be bool, got "
+            f"{type(rescale_amplitude).__name__!r}"
+        )
+        raise TypeError(msg)
+    if robust_cov is not None and not isinstance(robust_cov, (bool, np.bool_)):
+        msg = f"robust_cov must be bool, got {type(robust_cov).__name__!r}"
+        raise TypeError(msg)
+    return n_channels, n_samples
+
+
+def zca_matrix_from_covariance(covariance: np.ndarray, epsilon: float) -> np.ndarray:
+    """Build a ZCA whitening matrix from a channel covariance matrix."""
+    if epsilon <= 0:
+        msg = f"epsilon must be positive, got {epsilon!r}"
+        raise ValueError(msg)
+    u_mat, singular_values, _ = np.linalg.svd(covariance)
+    return u_mat @ np.diag(1.0 / np.sqrt(singular_values + epsilon)) @ u_mat.T
+
+
+def fit_zca_whitening(
+    voltage_matrix: np.ndarray,
+    *,
+    epsilon: float = 10.0,
+    robust_cov: bool = True,
+    good_channels: np.ndarray | list[int] | None = None,
+    sampling_rate_hz: float = DEFAULT_INTAN_FS_HZ,
+    lowcut_hz: float = DEFAULT_INTAN_LOWCUT_HZ,
+    highcut_hz: float = DEFAULT_INTAN_HIGHCUT_HZ,
+    filter_order: int = DEFAULT_INTAN_BANDPASS_ORDER,
+) -> ZcaFit:
+    """Fit ZCA whitening on bandpassed multichannel voltage data.
+
+    Parameters
+    ----------
+    voltage_matrix
+        Bandpassed voltage with shape ``(n_good, n_samples)``. Not modified.
+    epsilon
+        Eigenvalue regularizer (see :func:`apply_zca_whitening`).
+    robust_cov
+        Use the all-channel artifact gate when estimating covariance.
+    good_channels
+        Probe indices corresponding to each row of ``voltage_matrix``. When
+        omitted, defaults to ``0 .. n_good-1``.
+    sampling_rate_hz, lowcut_hz, highcut_hz, filter_order
+        Bandpass metadata stored in the returned :class:`ZcaFit`.
+
+    Returns
+    -------
+    ZcaFit
+        Session-level fit parameters for :func:`apply_zca_fit`.
+
+    Notes
+    -----
+    Caller must bandpass-filter raw voltage before fitting. Covariance,
+    medians, and robust scales describe the bandpassed signal domain.
+    """
+    n_channels, n_samples = _validate_voltage_matrix(
+        voltage_matrix,
+        epsilon=epsilon,
+        robust_cov=robust_cov,
+    )
+    if not robust_cov and n_samples < 2:
+        msg = (
+            "Covariance estimation needs at least 2 samples when robust_cov "
+            f"is False; got n_samples={n_samples}"
+        )
+        raise ValueError(msg)
+
+    if good_channels is None:
+        channel_ids = np.arange(n_channels, dtype=np.int64)
+    else:
+        channel_ids = np.asarray(good_channels, dtype=np.int64).ravel()
+        if channel_ids.shape != (n_channels,):
+            msg = (
+                "good_channels must have length n_channels="
+                f"{n_channels}; got {channel_ids.shape}"
+            )
+            raise ValueError(msg)
+
+    centered = voltage_matrix - np.median(voltage_matrix, axis=1, keepdims=True)
+    robust_std = np.median(np.abs(centered), axis=1, keepdims=True) * _MAD_TO_STD
+
+    if robust_cov:
+        is_clean_sample = np.all(np.abs(centered) < (4 * robust_std), axis=0)
+        n_clean = int(is_clean_sample.sum())
+        if n_clean < 2:
+            msg = (
+                "robust_cov requires at least 2 samples passing the clean "
+                f"artifact gate; got {n_clean}. Try robust_cov=False."
+            )
+            raise ValueError(msg)
+        covariance = np.cov(centered[:, is_clean_sample])
+    else:
+        covariance = np.cov(centered)
+
+    return ZcaFit(
+        good_channels=channel_ids,
+        covariance=np.asarray(covariance, dtype=np.float64),
+        channel_medians=np.median(voltage_matrix, axis=1).astype(np.float64),
+        mean_robust_std=float(np.mean(robust_std)),
+        epsilon=float(epsilon),
+        robust_cov=bool(robust_cov),
+        sampling_rate_hz=float(sampling_rate_hz),
+        lowcut_hz=float(lowcut_hz),
+        highcut_hz=float(highcut_hz),
+        filter_order=int(filter_order),
+    )
+
+
+def apply_zca_fit(
+    voltage_matrix: np.ndarray,
+    fit: ZcaFit,
+    *,
+    rescale_amplitude: bool = True,
+) -> np.ndarray:
+    """Apply a saved :class:`ZcaFit` to bandpassed multichannel data.
+
+    Parameters
+    ----------
+    voltage_matrix
+        Bandpassed voltage with shape ``(n_good, n_samples)``. **Modified in
+        place**; returned array is the same object.
+    fit
+        Parameters from :func:`fit_zca_whitening`.
+    rescale_amplitude
+        Multiply whitened data by :attr:`ZcaFit.mean_robust_std` when ``True``.
+
+    Returns
+    -------
+    numpy.ndarray
+        Whitened data; same array as ``voltage_matrix``.
+
+    Notes
+    -----
+    Caller must bandpass-filter before calling. Session medians from ``fit``
+    are subtracted (not snippet-local medians).
+    """
+    n_channels, _ = _validate_voltage_matrix(
+        voltage_matrix,
+        epsilon=fit.epsilon,
+        rescale_amplitude=rescale_amplitude,
+    )
+    if n_channels != fit.good_channels.shape[0]:
+        msg = (
+            "voltage_matrix channel count must match ZcaFit.good_channels; "
+            f"got {n_channels}, expected {fit.good_channels.shape[0]}"
+        )
+        raise ValueError(msg)
+
+    voltage_matrix -= fit.channel_medians[:, np.newaxis]
+    zca_matrix = fit.zca_matrix()
+    voltage_matrix[:] = zca_matrix @ voltage_matrix
+    if rescale_amplitude:
+        voltage_matrix *= fit.mean_robust_std
+    return voltage_matrix
+
+
+def apply_zca_whitening(
+    voltage_matrix: np.ndarray,
+    epsilon: float = 10.0,
+    rescale_amplitude: bool = True,
+    robust_cov: bool = True,
+) -> np.ndarray:
     """Whiten a voltage matrix with ZCA using robust per-channel scaling.
 
     Each channel is centered with its temporal median. Per-channel scale
@@ -47,106 +348,67 @@ def apply_zca_whitening(voltage_matrix, epsilon=10.0, rescale_amplitude=True, ro
     This routine mutates ``voltage_matrix`` for memory efficiency. Copy the
     input first if the original array must be preserved.
 
-    If validation fails **after** median centering (for example too few clean
-    samples when ``robust_cov`` is ``True``), the array may already be
-    median-centered; discard it or pass a copy on retry.
-
     The artifact gate when ``robust_cov`` is ``True`` keeps sample ``t`` iff
     ``|x[c, t]| < 4 * MAD_c`` for every channel ``c``, where ``MAD_c`` is the
     robust standard deviation of channel ``c`` after median centering.
-
-    Raises
-    ------
-    TypeError
-        If ``voltage_matrix`` is not a :class:`numpy.ndarray` with a
-        floating-point dtype, or if ``rescale_amplitude`` / ``robust_cov`` are
-        not boolean-like.
-    ValueError
-        If the array shape is invalid, ``epsilon`` is not positive, there are
-        too few samples for covariance estimation, or ``robust_cov`` leaves
-        fewer than two clean samples. If this occurs after median centering,
-        ``voltage_matrix`` has already been centered in place (see Notes).
     """
-    if not isinstance(voltage_matrix, np.ndarray):
-        msg = f"voltage_matrix must be a numpy.ndarray, got {type(voltage_matrix).__name__!r}"
-        raise TypeError(msg)
-    if voltage_matrix.ndim != 2:
-        msg = (
-            "voltage_matrix must have shape (n_channels, n_samples); "
-            f"got ndim={voltage_matrix.ndim}"
-        )
-        raise ValueError(msg)
-    n_channels, n_samples = voltage_matrix.shape
-    if n_channels < 1 or n_samples < 1:
-        msg = (
-            "voltage_matrix must have at least one channel and one sample; "
-            f"got shape {voltage_matrix.shape!r}"
-        )
-        raise ValueError(msg)
-    if not np.issubdtype(voltage_matrix.dtype, np.floating):
-        msg = f"voltage_matrix must have a floating-point dtype; got {voltage_matrix.dtype!r}"
-        raise TypeError(msg)
-    if epsilon <= 0:
-        msg = f"epsilon must be positive, got {epsilon!r}"
-        raise ValueError(msg)
-    if not isinstance(rescale_amplitude, (bool, np.bool_)):
-        msg = f"rescale_amplitude must be bool, got {type(rescale_amplitude).__name__!r}"
-        raise TypeError(msg)
-    if not isinstance(robust_cov, (bool, np.bool_)):
-        msg = f"robust_cov must be bool, got {type(robust_cov).__name__!r}"
-        raise TypeError(msg)
+    _validate_voltage_matrix(
+        voltage_matrix,
+        epsilon=epsilon,
+        rescale_amplitude=rescale_amplitude,
+        robust_cov=robust_cov,
+    )
+    fit = fit_zca_whitening(
+        np.array(voltage_matrix, copy=True),
+        epsilon=epsilon,
+        robust_cov=robust_cov,
+    )
+    return apply_zca_fit(
+        voltage_matrix,
+        fit,
+        rescale_amplitude=rescale_amplitude,
+    )
 
-    if not robust_cov and n_samples < 2:
-        msg = (
-            "Covariance estimation needs at least 2 samples when robust_cov "
-            f"is False; got n_samples={n_samples}"
-        )
-        raise ValueError(msg)
 
-    # 1. To avoid redundant extreme sorting, compute median once and use it
-    # everywhere.
-    # Note: For bandpassed ephys data, median is effectively 0, but this
-    # ensures perfect centering.
-    median_vars = np.median(voltage_matrix, axis=1, keepdims=True)
-    voltage_matrix -= median_vars
+def save_zca_fit_npz(path: str | Path, fit: ZcaFit) -> None:
+    """Write a :class:`ZcaFit` to an ``.npz`` artifact."""
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        output,
+        version=np.int32(ZCA_FIT_NPZ_VERSION),
+        good_channels=fit.good_channels.astype(np.int64),
+        covariance=fit.covariance.astype(np.float64),
+        channel_medians=fit.channel_medians.astype(np.float64),
+        mean_robust_std=np.float64(fit.mean_robust_std),
+        epsilon=np.float64(fit.epsilon),
+        robust_cov=np.bool_(fit.robust_cov),
+        sampling_rate_hz=np.float64(fit.sampling_rate_hz),
+        lowcut_hz=np.float64(fit.lowcut_hz),
+        highcut_hz=np.float64(fit.highcut_hz),
+        filter_order=np.int32(fit.filter_order),
+    )
 
-    # 2. Compute a unified, cached Robust Standard Deviation (MAD)
-    # Because centered_volt is cleanly centered, we completely skip the nested
-    # inner np.median calculation
-    robust_std = np.median(np.abs(voltage_matrix), axis=1, keepdims=True) * 1.4826
 
-    # 3. Compute covariance matrix across channels
-    if robust_cov:
-        # Find time-samples where ALL channels are below 4x std to drop
-        # movement artifacts
-        is_clean_sample = np.all(np.abs(voltage_matrix) < (4 * robust_std), axis=0)
-        n_clean = int(is_clean_sample.sum())
-        if n_clean < 2:
+def load_zca_fit_npz(path: str | Path) -> ZcaFit:
+    """Load a :class:`ZcaFit` written by :func:`save_zca_fit_npz`."""
+    with np.load(Path(path), allow_pickle=False) as archive:
+        version = int(archive["version"])
+        if version != ZCA_FIT_NPZ_VERSION:
             msg = (
-                "robust_cov requires at least 2 samples passing the clean "
-                f"artifact gate; got {n_clean}. "
-                "Try robust_cov=False or adjust inputs. "
-                "voltage_matrix has been median-centered in place."
+                f"Unsupported ZCA fit npz version {version}; "
+                f"expected {ZCA_FIT_NPZ_VERSION}"
             )
             raise ValueError(msg)
-        clean_centered_volt = voltage_matrix[:, is_clean_sample]
-        cov = np.cov(clean_centered_volt)
-    else:
-        cov = np.cov(voltage_matrix)
-
-    # 4. Eigen decomposition
-    U, S, _ = np.linalg.svd(cov)
-
-    # 5. Compute ZCA matrix with epsilon regularization
-    zca_matrix = U @ np.diag(1.0 / np.sqrt(S + epsilon)) @ U.T
-
-    # 6. Apply ZCA
-    voltage_matrix[:] = zca_matrix @ voltage_matrix
-
-    # 7. Rescale back to approximate original amplitude using our unified
-    # robust MAD
-    if rescale_amplitude:
-        fixed_scalar = np.mean(robust_std)
-        voltage_matrix *= fixed_scalar
-
-    return voltage_matrix
+        return ZcaFit(
+            good_channels=np.asarray(archive["good_channels"], dtype=np.int64),
+            covariance=np.asarray(archive["covariance"], dtype=np.float64),
+            channel_medians=np.asarray(archive["channel_medians"], dtype=np.float64),
+            mean_robust_std=float(archive["mean_robust_std"]),
+            epsilon=float(archive["epsilon"]),
+            robust_cov=bool(archive["robust_cov"]),
+            sampling_rate_hz=float(archive["sampling_rate_hz"]),
+            lowcut_hz=float(archive["lowcut_hz"]),
+            highcut_hz=float(archive["highcut_hz"]),
+            filter_order=int(archive["filter_order"]),
+        )
