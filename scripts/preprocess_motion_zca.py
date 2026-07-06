@@ -74,6 +74,7 @@ def preprocess_motion_zca(
         epsilon=epsilon,
         rescale_amplitude=True,
         robust_cov=True,
+        sampling_rate_hz=sampling_rate_hz,
     )
 
     print("Setting up SpikeInterface recording for interpolation...")

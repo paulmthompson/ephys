@@ -104,7 +104,11 @@ def preprocess_intan_to_zca(
 
     voltage_uV[good_channels, :] = apply_zca_whitening(
 
-        voltage_uV[good_channels, :], epsilon=epsilon, rescale_amplitude=True, robust_cov=True
+        voltage_uV[good_channels, :],
+        epsilon=epsilon,
+        rescale_amplitude=True,
+        robust_cov=True,
+        sampling_rate_hz=sampling_rate_hz,
 
     )
 

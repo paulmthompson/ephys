@@ -19,8 +19,10 @@ from ephys.processing.filtering import (
     DEFAULT_INTAN_LOWCUT_HZ,
 )
 
-ZCA_FIT_NPZ_VERSION = 1
+ZCA_FIT_NPZ_VERSION = 2
 _MAD_TO_STD = 1.4826
+_DEFAULT_ARTIFACT_N_SIGMA = 4.0
+_DEFAULT_ARTIFACT_PAD_MS = 0.5
 
 __all__ = [
     "ZCA_FIT_NPZ_VERSION",
@@ -52,6 +54,9 @@ class ZcaFit:
         Eigenvalue regularizer used to build the whitening matrix.
     robust_cov
         Whether covariance was estimated with the all-channel artifact gate.
+    artifact_pad_samples
+        Half-width in samples by which rejected artifact/spike samples were
+        dilated before covariance estimation.
     sampling_rate_hz, lowcut_hz, highcut_hz, filter_order
         Bandpass provenance stored for validation at apply time.
     """
@@ -62,6 +67,7 @@ class ZcaFit:
     mean_robust_std: float
     epsilon: float
     robust_cov: bool
+    artifact_pad_samples: int = 0
     sampling_rate_hz: float = DEFAULT_INTAN_FS_HZ
     lowcut_hz: float = DEFAULT_INTAN_LOWCUT_HZ
     highcut_hz: float = DEFAULT_INTAN_HIGHCUT_HZ
@@ -157,6 +163,74 @@ def _validate_voltage_matrix(
     return n_channels, n_samples
 
 
+def _validate_artifact_pad_samples(artifact_pad_samples: int) -> int:
+    """Validate the artifact-mask dilation half-width in samples."""
+    if isinstance(artifact_pad_samples, (bool, np.bool_)):
+        msg = (
+            "artifact_pad_samples must be a non-negative int, got "
+            f"{artifact_pad_samples!r}"
+        )
+        raise TypeError(msg)
+    if isinstance(artifact_pad_samples, np.integer):
+        artifact_pad_samples = int(artifact_pad_samples)
+    if not isinstance(artifact_pad_samples, int):
+        msg = (
+            "artifact_pad_samples must be a non-negative int, got "
+            f"{type(artifact_pad_samples).__name__!r}"
+        )
+        raise TypeError(msg)
+    if artifact_pad_samples < 0:
+        msg = (
+            "artifact_pad_samples must be non-negative, got "
+            f"{artifact_pad_samples!r}"
+        )
+        raise ValueError(msg)
+    return artifact_pad_samples
+
+
+def _default_artifact_pad_samples(sampling_rate_hz: float) -> int:
+    """Return the default dilation half-width for ``sampling_rate_hz``."""
+    return int(round(_DEFAULT_ARTIFACT_PAD_MS * 1e-3 * sampling_rate_hz))
+
+
+def _resolve_artifact_pad_samples(
+    artifact_pad_samples: int | None,
+    sampling_rate_hz: float,
+) -> int:
+    """Resolve ``None`` to the default half-width derived from sample rate."""
+    if artifact_pad_samples is None:
+        return _default_artifact_pad_samples(sampling_rate_hz)
+    return _validate_artifact_pad_samples(artifact_pad_samples)
+
+
+def _robust_std_per_channel(centered: np.ndarray) -> np.ndarray:
+    """Per-channel MAD scale with shape ``(n_channels, 1)``."""
+    return np.median(np.abs(centered), axis=1, keepdims=True) * _MAD_TO_STD
+
+
+def _dilate_rejected_mask(is_clean: np.ndarray, pad_samples: int) -> np.ndarray:
+    """Expand rejected samples by ``pad_samples`` on each side."""
+    if pad_samples <= 0:
+        return is_clean
+    rejected = ~is_clean
+    kernel = np.ones(2 * pad_samples + 1, dtype=np.int8)
+    dilated_rejected = np.convolve(rejected.astype(np.int8), kernel, mode="same") > 0
+    return ~dilated_rejected
+
+
+def _clean_sample_mask(
+    centered: np.ndarray,
+    *,
+    n_sigma: float = _DEFAULT_ARTIFACT_N_SIGMA,
+    artifact_pad_samples: int = 0,
+) -> np.ndarray:
+    """Return a boolean mask of samples to keep for covariance estimation."""
+    artifact_pad_samples = _validate_artifact_pad_samples(artifact_pad_samples)
+    robust_std = _robust_std_per_channel(centered)
+    is_clean = np.all(np.abs(centered) < (n_sigma * robust_std), axis=0)
+    return _dilate_rejected_mask(is_clean, artifact_pad_samples)
+
+
 def zca_matrix_from_covariance(covariance: np.ndarray, epsilon: float) -> np.ndarray:
     """Build a ZCA whitening matrix from a channel covariance matrix."""
     if epsilon <= 0:
@@ -171,6 +245,7 @@ def fit_zca_whitening(
     *,
     epsilon: float = 10.0,
     robust_cov: bool = True,
+    artifact_pad_samples: int | None = None,
     good_channels: np.ndarray | list[int] | None = None,
     sampling_rate_hz: float = DEFAULT_INTAN_FS_HZ,
     lowcut_hz: float = DEFAULT_INTAN_LOWCUT_HZ,
@@ -187,6 +262,11 @@ def fit_zca_whitening(
         Eigenvalue regularizer (see :func:`apply_zca_whitening`).
     robust_cov
         Use the all-channel artifact gate when estimating covariance.
+    artifact_pad_samples
+        When ``robust_cov`` is enabled, also reject this many samples on
+        either side of each thresholded artifact/spike sample before fitting
+        covariance. When ``None`` (default), uses ``0.5`` ms at
+        ``sampling_rate_hz`` (15 samples at 30 kHz).
     good_channels
         Probe indices corresponding to each row of ``voltage_matrix``. When
         omitted, defaults to ``0 .. n_good-1``.
@@ -203,6 +283,10 @@ def fit_zca_whitening(
     Caller must bandpass-filter raw voltage before fitting. Covariance,
     medians, and robust scales describe the bandpassed signal domain.
     """
+    artifact_pad_samples = _resolve_artifact_pad_samples(
+        artifact_pad_samples,
+        sampling_rate_hz,
+    )
     n_channels, n_samples = _validate_voltage_matrix(
         voltage_matrix,
         epsilon=epsilon,
@@ -227,10 +311,13 @@ def fit_zca_whitening(
             raise ValueError(msg)
 
     centered = voltage_matrix - np.median(voltage_matrix, axis=1, keepdims=True)
-    robust_std = np.median(np.abs(centered), axis=1, keepdims=True) * _MAD_TO_STD
+    robust_std = _robust_std_per_channel(centered)
 
     if robust_cov:
-        is_clean_sample = np.all(np.abs(centered) < (4 * robust_std), axis=0)
+        is_clean_sample = _clean_sample_mask(
+            centered,
+            artifact_pad_samples=artifact_pad_samples,
+        )
         n_clean = int(is_clean_sample.sum())
         if n_clean < 2:
             msg = (
@@ -249,6 +336,7 @@ def fit_zca_whitening(
         mean_robust_std=float(np.mean(robust_std)),
         epsilon=float(epsilon),
         robust_cov=bool(robust_cov),
+        artifact_pad_samples=artifact_pad_samples,
         sampling_rate_hz=float(sampling_rate_hz),
         lowcut_hz=float(lowcut_hz),
         highcut_hz=float(highcut_hz),
@@ -309,6 +397,8 @@ def apply_zca_whitening(
     epsilon: float = 10.0,
     rescale_amplitude: bool = True,
     robust_cov: bool = True,
+    artifact_pad_samples: int | None = None,
+    sampling_rate_hz: float = DEFAULT_INTAN_FS_HZ,
 ) -> np.ndarray:
     """Whiten a voltage matrix with ZCA using robust per-channel scaling.
 
@@ -337,6 +427,14 @@ def apply_zca_whitening(
         If ``True`` (default), estimate the covariance matrix using only
         samples that pass an all-channel artifact gate (see Notes). If
         ``False``, use ``numpy.cov`` on the full centered matrix.
+    artifact_pad_samples : int or None, optional
+        When ``robust_cov`` is enabled, also reject this many samples on
+        either side of each thresholded artifact/spike sample before fitting
+        covariance. When ``None`` (default), uses ``0.5`` ms at
+        ``sampling_rate_hz`` (15 samples at 30 kHz).
+    sampling_rate_hz : float, optional
+        Sample rate used to resolve the default ``artifact_pad_samples``.
+        Default is :data:`~ephys.processing.filtering.DEFAULT_INTAN_FS_HZ`.
 
     Returns
     -------
@@ -350,7 +448,9 @@ def apply_zca_whitening(
 
     The artifact gate when ``robust_cov`` is ``True`` keeps sample ``t`` iff
     ``|x[c, t]| < 4 * MAD_c`` for every channel ``c``, where ``MAD_c`` is the
-    robust standard deviation of channel ``c`` after median centering.
+    robust standard deviation of channel ``c`` after median centering. When
+    ``artifact_pad_samples > 0``, samples within that many indices of any
+    rejected sample are also excluded from covariance estimation.
     """
     _validate_voltage_matrix(
         voltage_matrix,
@@ -362,6 +462,8 @@ def apply_zca_whitening(
         np.array(voltage_matrix, copy=True),
         epsilon=epsilon,
         robust_cov=robust_cov,
+        artifact_pad_samples=artifact_pad_samples,
+        sampling_rate_hz=sampling_rate_hz,
     )
     return apply_zca_fit(
         voltage_matrix,
@@ -383,6 +485,7 @@ def save_zca_fit_npz(path: str | Path, fit: ZcaFit) -> None:
         mean_robust_std=np.float64(fit.mean_robust_std),
         epsilon=np.float64(fit.epsilon),
         robust_cov=np.bool_(fit.robust_cov),
+        artifact_pad_samples=np.int32(fit.artifact_pad_samples),
         sampling_rate_hz=np.float64(fit.sampling_rate_hz),
         lowcut_hz=np.float64(fit.lowcut_hz),
         highcut_hz=np.float64(fit.highcut_hz),
@@ -394,12 +497,15 @@ def load_zca_fit_npz(path: str | Path) -> ZcaFit:
     """Load a :class:`ZcaFit` written by :func:`save_zca_fit_npz`."""
     with np.load(Path(path), allow_pickle=False) as archive:
         version = int(archive["version"])
-        if version != ZCA_FIT_NPZ_VERSION:
+        if version not in (1, ZCA_FIT_NPZ_VERSION):
             msg = (
                 f"Unsupported ZCA fit npz version {version}; "
-                f"expected {ZCA_FIT_NPZ_VERSION}"
+                f"expected 1 or {ZCA_FIT_NPZ_VERSION}"
             )
             raise ValueError(msg)
+        artifact_pad_samples = (
+            0 if version < 2 else int(archive["artifact_pad_samples"])
+        )
         return ZcaFit(
             good_channels=np.asarray(archive["good_channels"], dtype=np.int64),
             covariance=np.asarray(archive["covariance"], dtype=np.float64),
@@ -407,6 +513,7 @@ def load_zca_fit_npz(path: str | Path) -> ZcaFit:
             mean_robust_std=float(archive["mean_robust_std"]),
             epsilon=float(archive["epsilon"]),
             robust_cov=bool(archive["robust_cov"]),
+            artifact_pad_samples=artifact_pad_samples,
             sampling_rate_hz=float(archive["sampling_rate_hz"]),
             lowcut_hz=float(archive["lowcut_hz"]),
             highcut_hz=float(archive["highcut_hz"]),
