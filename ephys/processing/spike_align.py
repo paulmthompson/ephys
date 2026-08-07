@@ -269,6 +269,41 @@ def sort_order_by_spike_count_then_first_spike(
     return np.lexsort((first_s, cnt))
 
 
+def sort_order_by_covariate(
+    values: np.ndarray,
+    *,
+    ascending: bool = True,
+) -> np.ndarray:
+    """Return trial indices sorted by a per-trial covariate; NaN last.
+
+    Parameters
+    ----------
+    values
+        One scalar per trial; any shape is flattened.
+    ascending
+        When ``True``, smaller covariates sort first; when ``False``, larger
+        values sort first.
+
+    Returns
+    -------
+    np.ndarray
+        ``intp`` index vector into the input order (suitable for
+        :func:`apply_trial_order`).
+
+    Notes
+    -----
+    ``NaN`` entries always sort after finite values regardless of
+    ``ascending``. Ties break by stable ascending trial index.
+    """
+    v = np.asarray(values, dtype=np.float64).ravel()
+    n = v.size
+    if n == 0:
+        return np.zeros(0, dtype=np.intp)
+    is_nan = np.isnan(v).astype(np.intp)
+    sort_key = v if ascending else -v
+    return np.lexsort((sort_key, is_nan))
+
+
 def apply_trial_order(
     trials: list[np.ndarray],
     order: np.ndarray,
