@@ -232,6 +232,43 @@ def sort_order_by_spike_count_descending(
     return np.argsort(-cnt, kind="mergesort")
 
 
+def sort_order_by_spike_count_then_first_spike(
+    spike_times_per_trial_s: list[np.ndarray],
+) -> np.ndarray:
+    """Return trial indices sorted by spike count, then first-spike latency.
+
+    Parameters
+    ----------
+    spike_times_per_trial_s
+        One 1D array per trial (relative spike times in seconds); empty arrays
+        are allowed.
+
+    Returns
+    -------
+    np.ndarray
+        ``intp`` index vector into the input list order (suitable for
+        :func:`apply_trial_order`).
+
+    Notes
+    -----
+    Primary key is ascending spike count (fewest spikes toward the bottom of
+    the raster, most toward the top). Within equal counts, trials are ordered
+    by ascending first-spike latency; empty trials use ``inf`` and sort last
+    within their count group. Ties break by stable ascending trial index.
+    """
+    n = len(spike_times_per_trial_s)
+    cnt = np.empty(n, dtype=np.intp)
+    first_s = np.empty(n, dtype=np.float64)
+    for i, arr in enumerate(spike_times_per_trial_s):
+        a = np.asarray(arr, dtype=float).ravel()
+        cnt[i] = int(a.size)
+        if a.size > 0:
+            first_s[i] = float(np.min(a))
+        else:
+            first_s[i] = np.inf
+    return np.lexsort((first_s, cnt))
+
+
 def apply_trial_order(
     trials: list[np.ndarray],
     order: np.ndarray,
