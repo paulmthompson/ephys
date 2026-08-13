@@ -37,12 +37,30 @@ class ModulationHistogramOptions(BaseModel):
     bar_color: str = "k"
     bar_edgecolor: str = "k"
     bar_linewidth: float = Field(default=0.25, ge=0.0)
+    x_ticks: tuple[float, ...] | None = Field(
+        default=None,
+        description="Explicit x-axis tick positions.",
+    )
+    x_tick_labels: tuple[str, ...] | None = Field(
+        default=None,
+        description=(
+            "Optional tick labels aligned with ``x_ticks``. When unset, "
+            "matplotlib formats tick positions automatically."
+        ),
+    )
 
     @model_validator(mode="after")
-    def _validate_xlim(self) -> ModulationHistogramOptions:
-        """Require min < max on any explicit x limit tuple."""
+    def _validate_limits_and_ticks(self) -> ModulationHistogramOptions:
+        """Require min < max on limits and consistent tick label length."""
         if self.xlim is not None and float(self.xlim[1]) <= float(self.xlim[0]):
             raise ValueError("xlim max must be greater than min")
+        if self.x_ticks is not None and len(self.x_ticks) < 1:
+            raise ValueError("x_ticks must have at least one value")
+        if self.x_tick_labels is not None:
+            if self.x_ticks is None:
+                raise ValueError("x_tick_labels requires x_ticks")
+            if len(self.x_tick_labels) != len(self.x_ticks):
+                raise ValueError("x_tick_labels length must match x_ticks")
         return self
 
 
@@ -141,9 +159,16 @@ def _style_modulation_histogram_axes(
     hi: float,
     xlabel: str,
     ylabel: str,
+    x_ticks: tuple[float, ...] | None = None,
+    x_tick_labels: tuple[str, ...] | None = None,
 ) -> None:
-    """Apply labels, limits, and spine styling."""
+    """Apply labels, limits, ticks, and spine styling."""
     ax.set_xlim(lo, hi)
+    if x_ticks is not None:
+        tick_arr = np.asarray(x_ticks, dtype=np.float64)
+        ax.set_xticks(tick_arr)
+        if x_tick_labels is not None:
+            ax.set_xticklabels(list(x_tick_labels))
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.spines["top"].set_visible(False)
@@ -222,4 +247,6 @@ def draw_modulation_histogram_into(
         hi=hi,
         xlabel=opts.xlabel,
         ylabel=opts.ylabel,
+        x_ticks=opts.x_ticks,
+        x_tick_labels=opts.x_tick_labels,
     )
