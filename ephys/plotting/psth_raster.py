@@ -15,10 +15,17 @@ axes to show both aggregate response patterns and trial-to-trial variability.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Literal
 
 import matplotlib.axes
 import numpy as np
 from pydantic import BaseModel, Field
+
+RasterTrialSort = Literal[
+    "first_spike",
+    "spike_count",
+    "spike_count_then_first_spike",
+]
 
 
 class RasterOptions(BaseModel):
@@ -35,6 +42,13 @@ class RasterOptions(BaseModel):
     event_linewidth: float | None = Field(
         default=0.6,
         description="Matplotlib eventplot stroke width (points).",
+    )
+    trial_sort: RasterTrialSort | None = Field(
+        default=None,
+        description=(
+            "Per-direction-band raster trial order; None uses the plot "
+            "driver default."
+        ),
     )
 
 

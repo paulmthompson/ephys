@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 _U_PARA = np.array([1.0, 1.0], dtype=np.float64) / np.sqrt(2.0)
 # Reference bin count for auto diff-inset bar height (independent of ``diff_hist_bins``).
 _DIFF_INSET_DEFAULT_COUNT_EXTENT_REF_BINS = 10
+_MIN_MARGINAL_GRID_RATIO = 1e-3
 
 
 def _format_diff_inset_tick_label(d: float) -> str:
@@ -59,6 +60,14 @@ class ScatterMarginalsOptions(BaseModel):
     ylim: tuple[float, float] | None = None
     marginal_hist_bins: int = Field(default=10, ge=1)
     diff_hist_bins: int = Field(default=10, ge=1)
+    diff_inset_enabled: bool = Field(
+        default=False,
+        description=(
+            "Draw the y−x difference inset on the unity line. When "
+            "``diff_inset_center`` is unset, the anchor is the midpoint of "
+            "the visible ``y = x`` segment."
+        ),
+    )
     diff_inset_center: float | None = None
     diff_inset_d_half_extent: float = Field(default=5.0, gt=0.0)
     diff_inset_count_extent: float | None = Field(
@@ -85,6 +94,13 @@ class ScatterMarginalsOptions(BaseModel):
     point_size: float = Field(default=16.0, gt=0.0)
     point_facecolor: str = "none"
     point_edgecolor: str = "0.15"
+    scatter_ticks: tuple[float, ...] | None = Field(
+        default=None,
+        description=(
+            "Explicit tick positions for both scatter axes. When unset, ticks "
+            "are chosen automatically (shared x/y when limits match)."
+        ),
+    )
 
     @model_validator(mode="after")
     def _validate_axis_limits(self) -> ScatterMarginalsOptions:
@@ -96,6 +112,8 @@ class ScatterMarginalsOptions(BaseModel):
         ):
             if lim is not None and float(lim[1]) <= float(lim[0]):
                 raise ValueError(f"{name} max must be greater than min")
+        if self.scatter_ticks is not None and len(self.scatter_ticks) < 1:
+            raise ValueError("scatter_ticks must have at least one value")
         return self
 
 
@@ -133,6 +151,125 @@ def resolve_scatter_axis_limits(
     lo_x, hi_x = _axis_bounds(x, xlim)
     lo_y, hi_y = _axis_bounds(y, ylim)
     return lo_x, hi_x, lo_y, hi_y
+
+
+def marginal_gridspec_ratios(
+    xspan: float,
+    yspan: float,
+    *,
+    marginal_height_ratio: float,
+    marginal_width_ratio: float,
+) -> tuple[float, float, float, float]:
+    """Return ``(top_h, scatter_h, scatter_w, right_w)`` for the inner grid.
+
+    When the scatter panel uses ``aspect="equal"``, displayed width and height
+    in inches scale with ``xspan`` and ``yspan``. Scale marginal row/column
+    fractions so the top strip height is approximately
+    ``marginal_height_ratio × scatter_display_width`` and the right strip width
+    is approximately ``marginal_width_ratio × scatter_display_height``.
+
+    Parameters
+    ----------
+    xspan, yspan
+        Positive data spans ``(hi - lo)`` on the scatter x and y axes.
+    marginal_height_ratio, marginal_width_ratio
+        Nominal marginal thickness as a fraction of the orthogonal scatter
+        display dimension.
+
+    Returns
+    -------
+    tuple[float, float, float, float]
+        ``height_ratios`` are ``(top_h, scatter_h)``; ``width_ratios`` are
+        ``(scatter_w, right_w)``.
+    """
+    if xspan <= 0.0 or yspan <= 0.0:
+        msg = f"xspan and yspan must be positive; got {xspan}, {yspan}"
+        raise ValueError(msg)
+    data_aspect = float(xspan) / float(yspan)
+    top_h = max(float(marginal_height_ratio) * data_aspect, _MIN_MARGINAL_GRID_RATIO)
+    right_w = max(
+        float(marginal_width_ratio) / data_aspect,
+        _MIN_MARGINAL_GRID_RATIO,
+    )
+    return top_h, 1.0, 1.0, right_w
+
+
+def should_draw_diff_inset(options: ScatterMarginalsOptions) -> bool:
+    """Return whether the y−x difference inset should be drawn."""
+    return bool(options.diff_inset_enabled or options.diff_inset_center is not None)
+
+
+def resolve_diff_inset_diagonal_pos(
+    options: ScatterMarginalsOptions,
+    lo_x: float,
+    hi_x: float,
+    lo_y: float,
+    hi_y: float,
+) -> float | None:
+    """Return unity-line anchor for the difference inset, if any.
+
+    Parameters
+    ----------
+    options
+        Scatter marginals options.
+    lo_x, hi_x, lo_y, hi_y
+        Scatter axis limits.
+
+    Returns
+    -------
+    float or None
+        Anchor ``s`` for ``(s, s)`` on ``y = x``, or ``None`` when the inset
+        is disabled or the unity segment is empty.
+    """
+    if not should_draw_diff_inset(options):
+        return None
+    if options.diff_inset_center is not None:
+        return float(options.diff_inset_center)
+    u_lo, _, u_hi, _ = unity_line_segment(lo_x, hi_x, lo_y, hi_y)
+    if u_hi <= u_lo:
+        return None
+    return 0.5 * (float(u_lo) + float(u_hi))
+
+
+def align_marginal_axes_to_scatter(
+    ax_scatter: Axes,
+    ax_top: Axes,
+    ax_right: Axes,
+) -> None:
+    """Match marginal axis boxes to the scatter panel after aspect-equal layout.
+
+    Parameters
+    ----------
+    ax_scatter
+        Main scatter axis with ``aspect="equal"`` already applied.
+    ax_top, ax_right
+        Marginal histogram axes created with ``sharex`` / ``sharey``.
+
+    Notes
+    -----
+    ``sharex`` and ``sharey`` align data limits but not axes positions when only
+    the scatter panel enforces equal aspect. A renderer draw finalizes the
+    scatter bbox, then the top marginal adopts the scatter x extent and the
+    right marginal is placed flush to the scatter's right edge with the
+    scatter y extent. The right strip width matches the top strip height so
+    marginal thickness is consistent when the parent cell is not square.
+    """
+    fig = ax_scatter.figure
+    fig.canvas.draw()
+    scatter_pos = ax_scatter.get_position()
+    top_pos = ax_top.get_position()
+    strip_thickness = top_pos.height
+    ax_top.set_position(
+        [scatter_pos.x0, top_pos.y0, scatter_pos.width, strip_thickness],
+    )
+    ax_right.set_position(
+        [
+            scatter_pos.x0 + scatter_pos.width,
+            scatter_pos.y0,
+            strip_thickness,
+            scatter_pos.height,
+        ],
+    )
 
 
 def unity_line_segment(
@@ -178,6 +315,25 @@ def _apply_shared_scatter_ticks(ax: Axes, lo: float, hi: float, *, nbins: int = 
         ticks = np.array([float(lo), float(hi)], dtype=np.float64)
     ax.set_xticks(ticks)
     ax.set_yticks(ticks)
+
+
+def apply_scatter_ticks(
+    ax: Axes,
+    *,
+    ticks: tuple[float, ...] | None,
+    lo_x: float,
+    hi_x: float,
+    lo_y: float,
+    hi_y: float,
+) -> None:
+    """Set scatter-axis ticks from explicit positions or automatic locators."""
+    if ticks is not None:
+        tick_arr = np.asarray(ticks, dtype=np.float64)
+        ax.set_xticks(tick_arr)
+        ax.set_yticks(tick_arr)
+        return
+    if _limits_are_equal(lo_x, hi_x, lo_y, hi_y):
+        _apply_shared_scatter_ticks(ax, lo_x, hi_x)
 
 
 def marginal_histogram_edges(
@@ -318,7 +474,7 @@ def _draw_diff_inset_axis(
         "color": "0.35",
         "linewidth": 0.9,
         "zorder": 5,
-        "clip_on": True,
+        "clip_on": False,
     }
     ax.plot([x0, x1], [y0, y1], **axis_kw)
     if not show_xtick_labels:
@@ -346,7 +502,7 @@ def _draw_diff_inset_axis(
             ha=ha,
             va="center",
             zorder=5,
-            clip_on=True,
+            clip_on=False,
         )
 
 
@@ -368,7 +524,8 @@ def _draw_y_minus_x_hist_inset(
     ``diagonal_pos`` sets the anchor ``(s, s)`` on ``y = x``. Core bin edges span
     ``[-extent, +extent]``. With ``overflow_bins``, low/high tail bars (one bin wide,
     just outside that range) count ``y - x < -extent`` and ``y - x > +extent``.
-    Bars grow along ``(1, 1)``; tail bars use lighter fill.
+    Bars grow along ``(1, 1)``; tail bars use lighter fill. Inset artists use
+    ``clip_on=False`` so the histogram may extend past the scatter axes.
 
     ``count_extent`` caps the tallest bar in data units; ``count_ylim`` optionally
     raises the count denominator so bars do not all saturate at the height limit.
@@ -419,7 +576,7 @@ def _draw_y_minus_x_hist_inset(
             alpha=0.55 if bar.is_overflow else 0.9,
             zorder=6,
             transform=ax.transData,
-            clip_on=True,
+            clip_on=False,
         )
         ax.add_patch(poly)
 
@@ -473,9 +630,16 @@ def draw_scatter_marginals_into(
     the same limits as their scatter axis (x for top, y for right); only points
     inside those limits are counted, with bars aligned to bin centers.
 
-    The difference inset is drawn only when ``diff_inset_center`` is set. It is
-    always centered at ``y - x = 0`` on the unity line at ``(s, s)`` for
-    ``s = diff_inset_center``, with bins symmetric in ``[-extent, +extent]``.
+    Marginal gridspec fractions are adjusted for unequal x/y spans when
+    ``aspect="equal"``.     Marginal axis positions are then aligned to the scatter panel bbox so top/right
+    histograms do not extend past the displayed scatter axes. Top strip height and
+    right strip width match. Marginal count axes share the same upper limit (the
+    larger of the two peak bin counts).
+
+    The difference inset is drawn when ``diff_inset_enabled`` is true or when
+    ``diff_inset_center`` is set (backward compatible). It is centered at
+    ``y - x = 0`` on the unity line at ``(s, s)`` for ``s = diff_inset_center``
+    or, when unset, the midpoint of the visible unity segment.
     """
     opts = options or ScatterMarginalsOptions()
     x_arr = data.x
@@ -491,12 +655,27 @@ def draw_scatter_marginals_into(
 
     rx = x_arr[mask]
     wy = y_arr[mask]
+    lo_x, hi_x, lo_y, hi_y = resolve_scatter_axis_limits(
+        rx,
+        wy,
+        scatter_lim=opts.scatter_lim,
+        xlim=opts.xlim,
+        ylim=opts.ylim,
+    )
+    xspan = float(hi_x) - float(lo_x)
+    yspan = float(hi_y) - float(lo_y)
+    top_h, scatter_h, scatter_w, right_w = marginal_gridspec_ratios(
+        xspan,
+        yspan,
+        marginal_height_ratio=opts.marginal_height_ratio,
+        marginal_width_ratio=opts.marginal_width_ratio,
+    )
     inner = GridSpecFromSubplotSpec(
         2,
         2,
         cell,
-        height_ratios=[opts.marginal_height_ratio, 1.0],
-        width_ratios=[1.0, opts.marginal_width_ratio],
+        height_ratios=[top_h, scatter_h],
+        width_ratios=[scatter_w, right_w],
         hspace=0.06,
         wspace=0.06,
     )
@@ -506,14 +685,14 @@ def draw_scatter_marginals_into(
     ax_corner = fig.add_subplot(inner[0, 1])
     ax_corner.set_axis_off()
 
-    lo_x, hi_x, lo_y, hi_y = resolve_scatter_axis_limits(
-        rx,
-        wy,
-        scatter_lim=opts.scatter_lim,
-        xlim=opts.xlim,
-        ylim=opts.ylim,
-    )
     u_lo, _, u_hi, _ = unity_line_segment(lo_x, hi_x, lo_y, hi_y)
+    diff_diagonal_pos = resolve_diff_inset_diagonal_pos(
+        opts,
+        lo_x,
+        hi_x,
+        lo_y,
+        hi_y,
+    )
 
     n_bins = int(opts.marginal_hist_bins)
     edges_x, edges_y = marginal_histogram_edges(lo_x, hi_x, lo_y, hi_y, n_bins)
@@ -522,8 +701,14 @@ def draw_scatter_marginals_into(
 
     ax_scatter.set_xlim(lo_x, hi_x)
     ax_scatter.set_ylim(lo_y, hi_y)
-    if _limits_are_equal(lo_x, hi_x, lo_y, hi_y):
-        _apply_shared_scatter_ticks(ax_scatter, lo_x, hi_x)
+    apply_scatter_ticks(
+        ax_scatter,
+        ticks=opts.scatter_ticks,
+        lo_x=lo_x,
+        hi_x=hi_x,
+        lo_y=lo_y,
+        hi_y=hi_y,
+    )
     ax_scatter.set_aspect("equal", adjustable="box")
     ax_scatter.scatter(
         rx,
@@ -533,7 +718,7 @@ def draw_scatter_marginals_into(
         facecolors=opts.point_facecolor,
         edgecolors=opts.point_edgecolor,
         zorder=3,
-        clip_on=False,
+        clip_on=True,
     )
     ax_scatter.plot(
         [u_lo, u_hi],
@@ -543,12 +728,14 @@ def draw_scatter_marginals_into(
         linewidth=0.95,
         alpha=0.75,
         zorder=1,
-        clip_on=False,
+        clip_on=True,
     )
     ax_scatter.set_xlabel(opts.xlabel)
     ax_scatter.set_ylabel(opts.ylabel)
     ax_scatter.spines["top"].set_visible(False)
     ax_scatter.spines["right"].set_visible(False)
+
+    align_marginal_axes_to_scatter(ax_scatter, ax_top, ax_right)
 
     counts_top, _, _ = ax_top.hist(
         rx_marg,
@@ -561,9 +748,6 @@ def draw_scatter_marginals_into(
     )
     ax_top.set_xlim(lo_x, hi_x)
     ax_top.set_axis_off()
-    ct = np.asarray(counts_top)
-    top_max = float(np.max(ct)) if ct.size else 0.0
-    ax_top.set_ylim(0.0, top_max * 1.02 if top_max > 0.0 else 1.0)
 
     counts_r, _, _ = ax_right.hist(
         wy_marg,
@@ -577,16 +761,21 @@ def draw_scatter_marginals_into(
     )
     ax_right.set_ylim(lo_y, hi_y)
     ax_right.set_axis_off()
+    ct = np.asarray(counts_top)
+    top_max = float(np.max(ct)) if ct.size else 0.0
     cr = np.asarray(counts_r)
     r_max = float(np.max(cr)) if cr.size else 0.0
-    ax_right.set_xlim(0.0, r_max * 1.02 if r_max > 0.0 else 1.0)
+    marg_max = max(top_max, r_max)
+    marg_limit = marg_max * 1.02 if marg_max > 0.0 else 1.0
+    ax_top.set_ylim(0.0, marg_limit)
+    ax_right.set_xlim(0.0, marg_limit)
 
-    if opts.diff_inset_center is not None:
+    if diff_diagonal_pos is not None:
         _draw_y_minus_x_hist_inset(
             ax_scatter,
             rx,
             wy,
-            diagonal_pos=float(opts.diff_inset_center),
+            diagonal_pos=float(diff_diagonal_pos),
             d_half_extent=float(opts.diff_inset_d_half_extent),
             count_extent=opts.diff_inset_count_extent,
             count_ylim=opts.diff_inset_count_ylim,
