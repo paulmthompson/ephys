@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import numpy as np
-from scipy.signal import butter, sosfiltfilt
+from scipy.signal import bessel, butter, sosfiltfilt
+
+BandpassFilterType = Literal["butterworth", "bessel"]
 
 DEFAULT_INTAN_FS_HZ = 30_000.0
 DEFAULT_INTAN_LOWCUT_HZ = 300.0
@@ -11,6 +15,7 @@ DEFAULT_INTAN_HIGHCUT_HZ = 5000.0
 DEFAULT_INTAN_BANDPASS_ORDER = 3
 
 __all__ = [
+    "BandpassFilterType",
     "DEFAULT_INTAN_BANDPASS_ORDER",
     "DEFAULT_INTAN_FS_HZ",
     "DEFAULT_INTAN_HIGHCUT_HZ",
@@ -25,6 +30,8 @@ def design_intan_sos_bandpass(
     highcut_hz: float = DEFAULT_INTAN_HIGHCUT_HZ,
     sampling_rate_hz: float = DEFAULT_INTAN_FS_HZ,
     order: int = DEFAULT_INTAN_BANDPASS_ORDER,
+    *,
+    filter_type: BandpassFilterType = "butterworth",
 ) -> np.ndarray:
     """Return SOS coefficients for the standard Intan spike-band pass.
 
@@ -35,7 +42,9 @@ def design_intan_sos_bandpass(
     sampling_rate_hz
         Sampling rate in hertz.
     order
-        Butterworth filter order.
+        Filter order.
+    filter_type
+        ``"butterworth"`` (default) or ``"bessel"``.
 
     Returns
     -------
@@ -43,9 +52,17 @@ def design_intan_sos_bandpass(
         Second-order-sections array for :func:`scipy.signal.sosfiltfilt`.
     """
     nyq = 0.5 * float(sampling_rate_hz)
-    return butter(
+    normalized_cutoffs = [float(lowcut_hz) / nyq, float(highcut_hz) / nyq]
+    if filter_type == "butterworth":
+        design = butter
+    elif filter_type == "bessel":
+        design = bessel
+    else:
+        raise ValueError(f"Unsupported filter_type: {filter_type!r}")
+
+    return design(
         int(order),
-        [float(lowcut_hz) / nyq, float(highcut_hz) / nyq],
+        normalized_cutoffs,
         btype="band",
         output="sos",
     )

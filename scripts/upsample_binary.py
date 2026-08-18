@@ -18,6 +18,8 @@ except ImportError:
     from ephys.processing.filtering import design_intan_sos_bandpass, sos_bandpass_filter
     from ephys.processing.resampling import whittaker_shannon_interpolate
 
+UINT16_ZERO_OFFSET = 32768
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -28,13 +30,29 @@ def main():
 
     parser.add_argument("--fs", type=float, default=30000.0, help="Original sampling rate in Hz (default: 30000.0)")
     parser.add_argument("--up_factor", type=int, default=4, help="Upsampling factor (default: 4)")
-    parser.add_argument("--bit_depth", type=float, default=0.195, help="Bit depth in uV/bit for converting int16 to float (default: 0.195)")
+    parser.add_argument(
+        "--bit_depth",
+        type=float,
+        default=0.195,
+        help="Bit depth in uV/bit after converting raw ADC counts to signed units (default: 0.195)",
+    )
     parser.add_argument("--header_bytes", type=int, default=0, help="Number of bytes to skip in the header (default: 0)")
+    parser.add_argument(
+        "--uint16",
+        action="store_true",
+        help="Load input as uint16 with zero at 32768 (default: load as int16)",
+    )
 
     # Filter options
     parser.add_argument("--lowcut", type=float, default=300.0, help="Bandpass lower cutoff in Hz (default: 300.0)")
     parser.add_argument("--highcut", type=float, default=5000.0, help="Bandpass upper cutoff in Hz (default: 5000.0)")
-    parser.add_argument("--order", type=int, default=4, help="Butterworth filter order (default: 4)")
+    parser.add_argument("--order", type=int, default=2, help="Bandpass filter order (default: 2)")
+    parser.add_argument(
+        "--filter",
+        choices=["bessel", "butterworth"],
+        default="bessel",
+        help="Bandpass filter type (default: bessel)",
+    )
 
     args = parser.parse_args()
 
@@ -45,30 +63,41 @@ def main():
         print(f"Error: Input file {input_path} does not exist.")
         sys.exit(1)
 
-    print(f"Loading data from {input_path}...")
-    # Read single-channel int16 data
+    input_dtype = "uint16" if args.uint16 else "int16"
+    print(f"Loading {input_dtype} data from {input_path}...")
     try:
-        data_int16 = np.fromfile(input_path, dtype=np.int16, offset=args.header_bytes)
+        if args.uint16:
+            data_raw = np.fromfile(input_path, dtype=np.uint16, offset=args.header_bytes)
+        else:
+            data_raw = np.fromfile(input_path, dtype=np.int16, offset=args.header_bytes)
     except Exception as e:
         print(f"Error loading file: {e}")
         sys.exit(1)
 
-    print(f"Loaded {len(data_int16)} samples.")
+    print(f"Loaded {len(data_raw)} samples.")
 
     # Convert to float32 and scale to physical units (e.g., uV)
     print("Converting to float32 and scaling by bit depth...")
-    data_float = data_int16.astype(np.float32) * args.bit_depth
+    if args.uint16:
+        data_float = (data_raw.astype(np.float32) - UINT16_ZERO_OFFSET) * args.bit_depth
+    else:
+        data_float = data_raw.astype(np.float32) * args.bit_depth
 
     # Free up memory if possible
-    del data_int16
+    del data_raw
 
     # Apply Bandpass Filter
-    print(f"Designing {args.order}th order Butterworth bandpass filter ({args.lowcut}-{args.highcut} Hz)...")
+    filter_label = args.filter.capitalize()
+    print(
+        f"Designing {args.order}th order {filter_label} bandpass filter "
+        f"({args.lowcut}-{args.highcut} Hz)..."
+    )
     sos = design_intan_sos_bandpass(
         lowcut_hz=args.lowcut,
         highcut_hz=args.highcut,
         sampling_rate_hz=args.fs,
         order=args.order,
+        filter_type=args.filter,
     )
 
     print("Applying forward-backward bandpass filter...")
