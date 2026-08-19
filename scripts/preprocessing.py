@@ -14,6 +14,8 @@ def preprocess_intan_to_zca(
     sampling_rate_hz=30000,
     lowcut=300.0,
     highcut=5000.0,
+    filter_type="bessel",
+    order=2,
     dead_channels=None,
     epsilon=10.0,
 ):
@@ -43,6 +45,10 @@ def preprocess_intan_to_zca(
 
         highcut (float): Low-pass cutoff
 
+        filter_type (str): Bandpass design to use ("bessel" or "butterworth")
+
+        order (int): Bandpass filter order
+
         dead_channels (list): List of channel indices to exclude from ZCA spatial mapping
 
         epsilon (float): Regularization parameter for the spatial whitening
@@ -57,12 +63,17 @@ def preprocess_intan_to_zca(
     voltage_uV = intan.load_voltage(str(input_filepath), channel_count)
     voltage_uV = np.swapaxes(voltage_uV, 0, 1)
 
-    print(f"Applying SOS bandpass filter ({lowcut}-{highcut} Hz)...")
+    print(
+        f"Applying {order}th order {filter_type.capitalize()} SOS bandpass filter "
+        f"({lowcut}-{highcut} Hz)..."
+    )
 
     sos = design_intan_sos_bandpass(
         lowcut_hz=lowcut,
         highcut_hz=highcut,
         sampling_rate_hz=sampling_rate_hz,
+        order=order,
+        filter_type=filter_type,
     )
 
     voltage_uV = sos_bandpass_filter(voltage_uV, sos, axis=1)
@@ -119,6 +130,18 @@ if __name__ == "__main__":
     parser.add_argument("--lowcut", type=float, default=300.0, help="High-pass cutoff")
     parser.add_argument("--highcut", type=float, default=5000.0, help="Low-pass cutoff")
     parser.add_argument(
+        "--filter",
+        choices=["bessel", "butterworth"],
+        default="bessel",
+        help="Bandpass filter type (default: bessel)",
+    )
+    parser.add_argument(
+        "--order",
+        type=int,
+        default=2,
+        help="Bandpass filter order (default: 2)",
+    )
+    parser.add_argument(
         "--dead_channels",
         type=int,
         nargs="*",
@@ -138,6 +161,8 @@ if __name__ == "__main__":
         sampling_rate_hz=args.sampling_rate_hz,
         lowcut=args.lowcut,
         highcut=args.highcut,
+        filter_type=args.filter,
+        order=args.order,
         dead_channels=args.dead_channels,
         epsilon=args.epsilon,
     )
