@@ -31,8 +31,9 @@ def style_x_axis_with_dedicated_label_row(
     xticklabels: Sequence[str],
     fontsize: float,
     tick_length: float = 3.5,
-    tick_width: float = 0.75,
+    tick_width: float = 0.8,
     tick_pad: float = 1.0,
+    label_fontsize: float | None = None,
     label_y_anchor: float = 0.0,
 ) -> None:
     """Style x-axis ticks on data axes and draw labels in a dedicated spacer row.
@@ -56,23 +57,31 @@ def style_x_axis_with_dedicated_label_row(
     xticklabels
         Labels for the ticks.
     fontsize
-        Font size for both tick labels and the axis label.
+        Font size for tick labels on ``ax_data``.
+    label_fontsize
+        Font size for ``label_text`` in ``ax_label``. ``None`` matches
+        ``fontsize``.
     tick_length, tick_width, tick_pad
         Formatting parameters for ticks on the data axes.
     label_y_anchor
         Vertical position for the label text in ``ax_label``.
     """
+    resolved_label_fontsize = (
+        fontsize if label_fontsize is None else label_fontsize
+    )
     ax_data.set_xticks(list(xticks))
     ax_data.set_xticklabels(list(xticklabels))
     ax_data.tick_params(
         axis="x",
         which="major",
+        direction="out",
         bottom=True,
         labelbottom=True,
         length=tick_length,
         width=tick_width,
         pad=tick_pad,
         labelsize=fontsize,
+        color="black",
     )
     ax_data.spines["bottom"].set_visible(True)
 
@@ -83,6 +92,6 @@ def style_x_axis_with_dedicated_label_row(
         ha="center",
         va="bottom",
         transform=ax_label.transAxes,
-        fontsize=fontsize,
+        fontsize=resolved_label_fontsize,
         clip_on=False,
     )
