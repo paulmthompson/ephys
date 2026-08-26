@@ -20,3 +20,25 @@ def test_add_vertical_broken_axis_style_hides_spines_and_draws() -> None:
     assert len(ax_l.lines) == 2
     assert len(ax_r.lines) == 2
     plt.close(fig)
+
+
+def test_add_vertical_broken_axis_style_uses_marker_linewidth() -> None:
+    """Explicit and inherited linewidths are forwarded to marker edges."""
+    fig, (ax_l, ax_r) = plt.subplots(1, 2, figsize=(4, 2))
+    ax_l.spines["right"].set_linewidth(0.5)
+    add_vertical_broken_axis_style(
+        ax_l,
+        ax_r,
+        vertical_positions=[0.5],
+        marker_linewidth=0.5,
+    )
+    assert ax_l.lines[0].get_mew() == 0.5
+    assert ax_r.lines[0].get_mew() == 0.5
+    plt.close(fig)
+
+    fig, (ax_l, ax_r) = plt.subplots(1, 2, figsize=(4, 2))
+    ax_l.spines["right"].set_linewidth(0.35)
+    ax_l.spines["right"].set_visible(True)
+    add_vertical_broken_axis_style(ax_l, ax_r, vertical_positions=[0.5])
+    assert ax_l.lines[0].get_mew() == 0.35
+    plt.close(fig)
