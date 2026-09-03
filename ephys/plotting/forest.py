@@ -7,6 +7,7 @@ from typing import Any, cast
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib import colors as mcolors
 from matplotlib.figure import Figure
 from matplotlib.gridspec import SubplotSpec
 from pydantic import BaseModel, Field
@@ -28,6 +29,25 @@ class ForestGridOptions(BaseModel):
     columns: list[ForestColumnSpec] = Field(default_factory=list)
 
 
+class ForestHighlightSpec(BaseModel):
+    """Highlight one animal/session row in a forest plot."""
+
+    model_config = {"frozen": True}
+
+    animal: str
+    session: str
+    color: str = "#d94801"
+    error_color: str | None = None
+    zorder: int = 5
+
+
+def _lighter_mpl_color(color: str, mix: float = 0.5) -> str:
+    """Blend a matplotlib color toward white for lighter error bars."""
+    rgb = np.array(mcolors.to_rgb(color), dtype=float)
+    lighter = rgb + (1.0 - rgb) * mix
+    return mcolors.to_hex(np.clip(lighter, 0.0, 1.0))
+
+
 def plot_forest(
     ax: plt.Axes,
     df: pd.DataFrame,
@@ -39,6 +59,7 @@ def plot_forest(
     detach_y_spine: bool = False,
     xlabel: str | None = None,
     default_xlabel: str = "Coefficient Value",
+    highlight: ForestHighlightSpec | None = None,
 ) -> None:
     """Plot posterior median and HDIs for each animal/session group.
 
@@ -64,6 +85,8 @@ def plot_forest(
         X-axis label; defaults to ``default_xlabel``.
     default_xlabel
         Fallback x-axis label when ``xlabel`` is None.
+    highlight
+        Optional animal/session row to emphasize with a second marker.
     """
     if df.empty or parameter not in df.columns:
         ax.text(
@@ -98,6 +121,8 @@ def plot_forest(
         upper = np.quantile(samples, upper_q)
         results.append(
             {
+                "animal": str(animal),
+                "session": str(session),
                 "label": f"{animal}/{session}",
                 "med": med,
                 "lower": lower,
@@ -126,18 +151,51 @@ def plot_forest(
     lowers = res_df["lower"].values
     uppers = res_df["upper"].values
 
-    ax.errorbar(
-        medians,
-        y_pos,
-        xerr=[medians - lowers, uppers - medians],
-        fmt="o",
-        color="black",
-        capsize=0,
-        markersize=2.5,
-        markerfacecolor="black",
-        markeredgecolor="black",
-        ecolor="gray",
-    )
+    highlight_mask = np.zeros(len(res_df), dtype=bool)
+    if highlight is not None:
+        highlight_mask = (res_df["animal"].astype(str) == str(highlight.animal)).to_numpy() & (
+            res_df["session"].astype(str) == str(highlight.session)
+        ).to_numpy()
+
+    baseline_mask = ~highlight_mask
+    if np.any(baseline_mask):
+        ax.errorbar(
+            medians[baseline_mask],
+            y_pos[baseline_mask],
+            xerr=[
+                medians[baseline_mask] - lowers[baseline_mask],
+                uppers[baseline_mask] - medians[baseline_mask],
+            ],
+            fmt="o",
+            color="black",
+            capsize=0,
+            markersize=2.5,
+            markerfacecolor="black",
+            markeredgecolor="black",
+            ecolor="gray",
+        )
+
+    if highlight is not None and np.any(highlight_mask):
+        highlight_color = highlight.color
+        highlight_error_color = highlight.error_color or _lighter_mpl_color(
+            highlight_color,
+        )
+        ax.errorbar(
+            medians[highlight_mask],
+            y_pos[highlight_mask],
+            xerr=[
+                medians[highlight_mask] - lowers[highlight_mask],
+                uppers[highlight_mask] - medians[highlight_mask],
+            ],
+            fmt="o",
+            color=highlight_color,
+            capsize=0,
+            markersize=2.5,
+            markerfacecolor=highlight_color,
+            markeredgecolor=highlight_color,
+            ecolor=highlight_error_color,
+            zorder=highlight.zorder,
+        )
 
     ax.axvline(0, color="black", linestyle="--", alpha=0.7, linewidth=1)
 
