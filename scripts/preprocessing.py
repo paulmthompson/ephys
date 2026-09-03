@@ -4,10 +4,37 @@ from ephys.data_wrangling import intan
 
 from ephys.processing.filtering import design_intan_sos_bandpass, sos_bandpass_filter
 
+from ephys.processing.spatial_diagnostics import (
+    compute_spatial_diagnostics,
+    format_spatial_diagnostics_line,
+    plan_spatial_subsample_indices,
+)
 from ephys.processing.zca import apply_zca_whitening
 
+INTAN_BIT_TO_uV = 0.195
 
-def preprocess_intan_to_zca(
+
+def apply_common_median_reference(voltage_uV, good_channels):
+    """Subtract the across-channel median computed from good channels.
+
+    Parameters
+    ----------
+    voltage_uV
+        Voltage array with shape ``(n_channels, n_samples)``. Modified in place.
+    good_channels
+        Channel indices used to estimate the common median reference.
+
+    Returns
+    -------
+    numpy.ndarray
+        The same array as ``voltage_uV``.
+    """
+    reference = np.median(voltage_uV[good_channels, :], axis=0, keepdims=True)
+    voltage_uV[good_channels, :] -= reference
+    return voltage_uV
+
+
+def preprocess_intan(
     input_filepath,
     output_filepath,
     channel_count=32,
@@ -17,6 +44,7 @@ def preprocess_intan_to_zca(
     filter_type="bessel",
     order=2,
     dead_channels=None,
+    spatial_reference="zca",
     epsilon=10.0,
 ):
     """
@@ -27,7 +55,7 @@ def preprocess_intan_to_zca(
 
     2. Applies zero-phase SOS bandpass filtering.
 
-    3. Excludes dead channels and applies robust ZCA whitening.
+    3. Applies spatial reference on good channels (ZCA, CMR, or CMR then ZCA).
 
     4. Saves the results as Intan-compatible 16-bit integers to a new binary file.
 
@@ -35,7 +63,7 @@ def preprocess_intan_to_zca(
 
         input_filepath (str/Path): Path to raw amplifier.dat
 
-        output_filepath (str/Path): Destination path for the whitened output .dat
+        output_filepath (str/Path): Destination path for the processed output .dat
 
         channel_count (int): Number of channels in the Intan recording
 
@@ -49,15 +77,23 @@ def preprocess_intan_to_zca(
 
         order (int): Bandpass filter order
 
-        dead_channels (list): List of channel indices to exclude from ZCA spatial mapping
+        dead_channels (list): List of channel indices excluded from spatial reference
 
-        epsilon (float): Regularization parameter for the spatial whitening
+        spatial_reference (str): One of ``"zca"``, ``"cmr"``, or ``"cmr_zca"``
+
+        epsilon (float): Regularization parameter for ZCA whitening
 
     """
 
     if dead_channels is None:
-
         dead_channels = []
+
+    if spatial_reference not in ("zca", "cmr", "cmr_zca"):
+        msg = (
+            f"spatial_reference must be 'zca', 'cmr', or 'cmr_zca'; "
+            f"got {spatial_reference!r}"
+        )
+        raise ValueError(msg)
 
     print(f"Loading data from {input_filepath}...")
     voltage_uV = intan.load_voltage(str(input_filepath), channel_count)
@@ -78,31 +114,52 @@ def preprocess_intan_to_zca(
 
     voltage_uV = sos_bandpass_filter(voltage_uV, sos, axis=1)
 
-    print("Computing and applying robust ZCA (excluding dead channels)...")
-
     good_channels = [ch for ch in range(channel_count) if ch not in dead_channels]
+    diagnostic_indices = plan_spatial_subsample_indices(voltage_uV.shape[1])
 
-    # Assign the result back to voltage_uV because advanced indexing creates a copy
+    def log_spatial_diagnostics(label: str) -> None:
+        diagnostics = compute_spatial_diagnostics(
+            voltage_uV,
+            good_channels,
+            diagnostic_indices,
+        )
+        print(format_spatial_diagnostics_line(label, diagnostics))
 
-    voltage_uV[good_channels, :] = apply_zca_whitening(
-        voltage_uV[good_channels, :],
-        epsilon=epsilon,
-        rescale_amplitude=True,
-        robust_cov=True,
-        sampling_rate_hz=sampling_rate_hz,
-    )
+    print("Spatial diagnostics (subsampled; good channels only):")
+    log_spatial_diagnostics("after bandpass")
+
+    if spatial_reference in ("cmr", "cmr_zca"):
+        print(
+            "Applying common median reference (CMR) on good channels "
+            f"(excluding dead channels: {dead_channels or 'none'})..."
+        )
+        apply_common_median_reference(voltage_uV, good_channels)
+        log_spatial_diagnostics("after CMR")
+
+    if spatial_reference in ("zca", "cmr_zca"):
+        step = "robust ZCA after CMR" if spatial_reference == "cmr_zca" else "robust ZCA"
+        print(f"Computing and applying {step} (excluding dead channels)...")
+        voltage_uV[good_channels, :] = apply_zca_whitening(
+            voltage_uV[good_channels, :],
+            epsilon=epsilon,
+            rescale_amplitude=True,
+            robust_cov=True,
+            sampling_rate_hz=sampling_rate_hz,
+        )
+        log_spatial_diagnostics("after ZCA")
 
     print("Converting to 16-bit Intan integers and saving...")
 
-    INTAN_BIT_TO_uV = 0.195
-
-    voltage_zca_int16 = np.round(voltage_uV / INTAN_BIT_TO_uV).astype(np.int16)
-
-    voltage_zca_int16 = np.swapaxes(voltage_zca_int16, 0, 1)
-
-    voltage_zca_int16.tofile(str(output_filepath))
+    voltage_int16 = np.round(voltage_uV / INTAN_BIT_TO_uV).astype(np.int16)
+    voltage_int16 = np.swapaxes(voltage_int16, 0, 1)
+    voltage_int16.tofile(str(output_filepath))
 
     print(f"Preprocessing complete! Saved to {output_filepath}")
+
+
+def preprocess_intan_to_zca(*args, **kwargs):
+    """Backward-compatible alias for :func:`preprocess_intan`."""
+    return preprocess_intan(*args, **kwargs)
 
 
 if __name__ == "__main__":
@@ -116,7 +173,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "output_filepath",
         type=str,
-        help="Destination path for the whitened output .dat",
+        help="Destination path for the processed output .dat",
     )
     parser.add_argument(
         "--channel_count",
@@ -146,15 +203,27 @@ if __name__ == "__main__":
         type=int,
         nargs="*",
         default=None,
-        help="List of channel indices to exclude",
+        help="List of channel indices to exclude from spatial reference",
     )
     parser.add_argument(
-        "--epsilon", type=float, default=10.0, help="Regularization parameter"
+        "--spatial-reference",
+        choices=["zca", "cmr", "cmr_zca"],
+        default="zca",
+        help=(
+            "Spatial reference mode: zca (default), cmr (common median reference only), "
+            "or cmr_zca (CMR followed by ZCA)"
+        ),
+    )
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=10.0,
+        help="ZCA regularization parameter (used with zca and cmr_zca)",
     )
 
     args = parser.parse_args()
 
-    preprocess_intan_to_zca(
+    preprocess_intan(
         input_filepath=args.input_filepath,
         output_filepath=args.output_filepath,
         channel_count=args.channel_count,
@@ -164,5 +233,6 @@ if __name__ == "__main__":
         filter_type=args.filter,
         order=args.order,
         dead_channels=args.dead_channels,
+        spatial_reference=args.spatial_reference,
         epsilon=args.epsilon,
     )
