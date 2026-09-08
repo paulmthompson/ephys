@@ -36,9 +36,15 @@ class ForestHighlightSpec(BaseModel):
 
     animal: str
     session: str
+    open_marker: bool = True
     color: str = "#d94801"
     error_color: str | None = None
     zorder: int = 5
+
+
+FOREST_MARKER_SIZE = 2.5
+FOREST_ERROR_BAR_COLOR = "gray"
+FOREST_ERROR_BAR_LINEWIDTH = 1.5
 
 
 def _lighter_mpl_color(color: str, mix: float = 0.5) -> str:
@@ -86,7 +92,9 @@ def plot_forest(
     default_xlabel
         Fallback x-axis label when ``xlabel`` is None.
     highlight
-        Optional animal/session row to emphasize with a second marker.
+        Optional animal/session row to emphasize. By default the row is
+        redrawn with a white-filled open circle marker using the same edge
+        colors as peers.
     """
     if df.empty or parameter not in df.columns:
         ax.text(
@@ -169,17 +177,24 @@ def plot_forest(
             fmt="o",
             color="black",
             capsize=0,
-            markersize=2.5,
+            markersize=FOREST_MARKER_SIZE,
             markerfacecolor="black",
             markeredgecolor="black",
-            ecolor="gray",
+            ecolor=FOREST_ERROR_BAR_COLOR,
+            elinewidth=FOREST_ERROR_BAR_LINEWIDTH,
         )
 
     if highlight is not None and np.any(highlight_mask):
-        highlight_color = highlight.color
-        highlight_error_color = highlight.error_color or _lighter_mpl_color(
-            highlight_color,
-        )
+        if highlight.open_marker:
+            marker_color = "black"
+            marker_facecolor = "white"
+            error_color = FOREST_ERROR_BAR_COLOR
+        else:
+            marker_color = highlight.color
+            marker_facecolor = highlight.color
+            error_color = highlight.error_color or _lighter_mpl_color(
+                marker_color,
+            )
         ax.errorbar(
             medians[highlight_mask],
             y_pos[highlight_mask],
@@ -188,12 +203,13 @@ def plot_forest(
                 uppers[highlight_mask] - medians[highlight_mask],
             ],
             fmt="o",
-            color=highlight_color,
+            color=marker_color,
             capsize=0,
-            markersize=2.5,
-            markerfacecolor=highlight_color,
-            markeredgecolor=highlight_color,
-            ecolor=highlight_error_color,
+            markersize=FOREST_MARKER_SIZE,
+            markerfacecolor=marker_facecolor,
+            markeredgecolor=marker_color,
+            ecolor=error_color,
+            elinewidth=FOREST_ERROR_BAR_LINEWIDTH,
             zorder=highlight.zorder,
         )
 
