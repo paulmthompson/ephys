@@ -18,6 +18,7 @@ from ephys.processing.spike_intervals import (
     inter_spike_intervals,
     summarize_trial_cv2,
 )
+from ephys.processing.spike_rate import per_trial_firing_rates_hz_in_window
 
 __all__ = [
     "TrialCv2Summary",
@@ -30,6 +31,7 @@ __all__ = [
     "inter_spike_intervals",
     "log_raised_cosine_basis",
     "ms_to_ticks",
+    "per_trial_firing_rates_hz_in_window",
     "raised_cosine_basis",
     "seconds_to_ticks",
     "spikes_relative_to_tick_intervals",
