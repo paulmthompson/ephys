@@ -9,6 +9,9 @@ before gathering so trial windows do not overlap.
 
 from __future__ import annotations
 
+import math
+from typing import Literal
+
 import numpy as np
 
 
@@ -36,6 +39,98 @@ def spike_times_ticks_from_seconds(
     """
     st = np.asarray(spike_times_s, dtype=float).ravel()
     return np.round(st * sampling_rate_hz).astype(np.int64, copy=False)
+
+
+def _round_scalar_ticks(
+    ticks_float: float,
+    rounding: Literal["ceil", "round"],
+) -> int:
+    if rounding == "ceil":
+        return int(math.ceil(ticks_float))
+    if rounding == "round":
+        return int(round(ticks_float))
+    msg = f"Unsupported rounding mode: {rounding!r}; expected 'ceil' or 'round'"
+    raise ValueError(msg)
+
+
+def seconds_to_ticks(
+    seconds: float,
+    sampling_rate_hz: float,
+    *,
+    rounding: Literal["ceil", "round"] = "round",
+) -> int:
+    """Convert a scalar time or duration in seconds to integer DAQ ticks.
+
+    Parameters
+    ----------
+    seconds
+        Time or duration in seconds (must be finite).
+    sampling_rate_hz
+        Acquisition sampling rate in hertz (must be finite and positive).
+    rounding
+        ``"round"`` (default, nearest tick) or ``"ceil"`` (smallest integer
+        tick count at least as large as the exact duration).
+
+    Returns
+    -------
+    int
+        Integer DAQ ticks.
+
+    Raises
+    ------
+    ValueError
+        If ``seconds`` is not finite, ``sampling_rate_hz`` is not finite and
+        positive, or ``rounding`` is invalid.
+    """
+    fs = float(sampling_rate_hz)
+    if not math.isfinite(fs) or fs <= 0.0:
+        msg = f"sampling_rate_hz must be finite and positive; got {sampling_rate_hz}"
+        raise ValueError(msg)
+    sec = float(seconds)
+    if not math.isfinite(sec):
+        msg = f"seconds must be finite; got {seconds}"
+        raise ValueError(msg)
+    return _round_scalar_ticks(sec * fs, rounding)
+
+
+def ms_to_ticks(
+    ms: float,
+    sampling_rate_hz: float,
+    *,
+    rounding: Literal["ceil", "round"] = "ceil",
+) -> int:
+    """Convert a scalar time or padding in milliseconds to integer DAQ ticks.
+
+    Parameters
+    ----------
+    ms
+        Time or window padding in milliseconds (must be finite).
+    sampling_rate_hz
+        Acquisition sampling rate in hertz (must be finite and positive).
+    rounding
+        ``"ceil"`` (default, conservative window coverage) or ``"round"``
+        (nearest integer tick).
+
+    Returns
+    -------
+    int
+        Integer DAQ ticks.
+
+    Raises
+    ------
+    ValueError
+        If ``ms`` is not finite, ``sampling_rate_hz`` is not finite and
+        positive, or ``rounding`` is invalid.
+    """
+    fs = float(sampling_rate_hz)
+    if not math.isfinite(fs) or fs <= 0.0:
+        msg = f"sampling_rate_hz must be finite and positive; got {sampling_rate_hz}"
+        raise ValueError(msg)
+    ms_val = float(ms)
+    if not math.isfinite(ms_val):
+        msg = f"ms must be finite; got {ms}"
+        raise ValueError(msg)
+    return _round_scalar_ticks(ms_val * fs / 1000.0, rounding)
 
 
 def spikes_relative_to_events_ticks(

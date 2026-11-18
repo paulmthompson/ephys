@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
+import pytest
 
 from ephys.processing.spike_align import (
     apply_trial_order,
     event_ticks_greedy_non_overlapping_half_windows,
+    ms_to_ticks,
+    seconds_to_ticks,
     sort_order_by_spike_count_descending,
     spikes_relative_to_events_ticks,
 )
@@ -93,3 +98,22 @@ def test_sort_order_by_spike_count_descending() -> None:
     assert len(stacked[0]) == 3
     assert len(stacked[1]) == 1
     assert len(stacked[2]) == 0
+
+
+def test_ms_to_ticks_and_seconds_to_ticks() -> None:
+    """Scalar ms and seconds conversions support ceil and round modes."""
+    assert ms_to_ticks(2.0, 30_000.0) == 60
+    assert ms_to_ticks(0.05, 30_000.0, rounding="ceil") == 2
+    assert ms_to_ticks(0.05, 30_000.0, rounding="round") == 2
+    assert ms_to_ticks(0.04, 30_000.0, rounding="round") == 1
+    assert seconds_to_ticks(0.007, 30_000.0) == 210
+    assert seconds_to_ticks(0.0001, 30_000.0, rounding="ceil") == 3
+    assert seconds_to_ticks(0.00004, 30_000.0, rounding="ceil") == 2
+
+    with pytest.raises(ValueError, match="sampling_rate_hz"):
+        ms_to_ticks(2.0, 0.0)
+    with pytest.raises(ValueError, match="seconds must be finite"):
+        seconds_to_ticks(float("nan"), 30_000.0)
+    bad_mode: Any = "floor"
+    with pytest.raises(ValueError, match="Unsupported rounding mode"):
+        ms_to_ticks(2.0, 30_000.0, rounding=bad_mode)
