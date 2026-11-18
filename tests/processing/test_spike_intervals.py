@@ -6,10 +6,15 @@ import numpy as np
 import pytest
 
 from ephys.processing.spike_intervals import (
+    TrialCv2Summary,
     adjacent_isi_cv2,
+    bootstrap_median_ci_by_trial,
     collect_adjacent_isi_cv2,
     collect_adjacent_isi_cv2_by_trial,
+    collect_inter_spike_intervals,
+    flatten_finite_trial_values,
     inter_spike_intervals,
+    summarize_trial_cv2,
 )
 
 
@@ -62,3 +67,52 @@ def test_collect_adjacent_isi_cv2_flattens_trial_values() -> None:
     )
     cv2 = collect_adjacent_isi_cv2(trials)
     assert cv2.tolist() == pytest.approx([0.4, 1.2])
+
+
+def test_collect_inter_spike_intervals_and_flatten_finite() -> None:
+    """Pooled within-trial ISIs ignore short trials and non-finite entries."""
+    trials = (
+        np.array([0.0, 0.01, 0.03], dtype=np.float64),
+        np.array([0.05], dtype=np.float64),
+        np.array([0.10, 0.12], dtype=np.float64),
+    )
+    isi = collect_inter_spike_intervals(trials)
+    assert isi.tolist() == pytest.approx([0.01, 0.02, 0.02])
+
+    flattened = flatten_finite_trial_values(
+        [np.array([1.0, np.nan]), np.array([], dtype=np.float64), np.array([2.5])]
+    )
+    assert flattened.tolist() == pytest.approx([1.0, 2.5])
+
+
+def test_summarize_trial_cv2_and_bootstrap_ci() -> None:
+    """Trial summary computes counts, median/mean CV2, and bootstrap CI."""
+    trials = (
+        np.array([0.000, 0.002, 0.005], dtype=np.float64),
+        np.array([0.000, 0.004, 0.005], dtype=np.float64),
+        np.array([0.010], dtype=np.float64),
+        np.array([], dtype=np.float64),
+    )
+    summary = summarize_trial_cv2(
+        trials,
+        rng=np.random.default_rng(0),
+        n_bootstrap=50,
+        ci_level=0.95,
+    )
+    assert isinstance(summary, TrialCv2Summary)
+    assert summary.n_trials == 4
+    assert summary.n_spiking_trials == 3
+    assert summary.n_cv2_trials == 2
+    assert summary.n_cv2_pairs == 2
+    assert summary.median_cv2 == pytest.approx(0.8)
+    assert summary.mean_cv2 == pytest.approx(0.8)
+    assert 0.4 <= summary.ci_low <= summary.ci_high <= 1.2
+
+    with pytest.raises(ValueError, match="n_bootstrap"):
+        bootstrap_median_ci_by_trial(
+            trials, rng=np.random.default_rng(0), n_bootstrap=0, ci_level=0.95
+        )
+    with pytest.raises(ValueError, match="ci_level"):
+        bootstrap_median_ci_by_trial(
+            trials, rng=np.random.default_rng(0), n_bootstrap=10, ci_level=1.0
+        )

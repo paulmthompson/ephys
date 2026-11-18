@@ -194,9 +194,80 @@ def spikes_relative_to_events_ticks(
         i0 = int(np.searchsorted(spike_times_ticks, lo, side="left"))
         i1 = int(np.searchsorted(spike_times_ticks, hi, side="left"))
         chunk = spike_times_ticks[i0:i1]
-        rel_s = chunk.astype(np.float64) / sampling_rate_hz - float(event_tick) / sampling_rate_hz
+        rel_s = (
+            chunk.astype(np.float64) / sampling_rate_hz
+            - float(event_tick) / sampling_rate_hz
+        )
         rel_per_trial.append(rel_s)
 
+    return rel_per_trial
+
+
+def spikes_relative_to_tick_intervals(
+    spike_times_ticks: np.ndarray,
+    onset_ticks: np.ndarray,
+    offset_ticks: np.ndarray,
+    sampling_rate_hz: float,
+    *,
+    inclusive_offset: bool = True,
+) -> list[np.ndarray]:
+    """Spike times in seconds relative to each interval onset.
+
+    Parameters
+    ----------
+    spike_times_ticks
+        Spike sample indices in DAQ ticks. Sorted internally with mergesort.
+    onset_ticks, offset_ticks
+        Equal-length 1D interval start and end bounds in DAQ ticks.
+    sampling_rate_hz
+        Acquisition sampling rate in hertz (must be finite and positive).
+    inclusive_offset
+        If ``True`` (default), collect spikes satisfying
+        ``onset <= spike <= offset``. If ``False``, use half-open bounds
+        ``onset <= spike < offset``.
+
+    Returns
+    -------
+    list[np.ndarray]
+        One ``float64`` array per interval containing onset-relative spike times
+        in seconds. Intervals with ``offset <= onset`` yield empty arrays.
+
+    Raises
+    ------
+    ValueError
+        If ``sampling_rate_hz`` is not finite and positive or if
+        ``onset_ticks`` and ``offset_ticks`` differ in shape.
+    """
+    fs = float(sampling_rate_hz)
+    if not math.isfinite(fs) or fs <= 0.0:
+        msg = f"sampling_rate_hz must be finite and positive; got {sampling_rate_hz}"
+        raise ValueError(msg)
+
+    onsets = np.asarray(onset_ticks, dtype=np.int64).ravel()
+    offsets = np.asarray(offset_ticks, dtype=np.int64).ravel()
+    if onsets.shape != offsets.shape:
+        msg = (
+            f"onset_ticks and offset_ticks must have the same length; "
+            f"got {onsets.shape[0]} and {offsets.shape[0]}"
+        )
+        raise ValueError(msg)
+
+    spikes = np.sort(
+        np.asarray(spike_times_ticks, dtype=np.int64).ravel(),
+        kind="mergesort",
+    )
+    right_side: Literal["left", "right"] = "right" if inclusive_offset else "left"
+    rel_per_trial: list[np.ndarray] = []
+    for onset_tick, offset_tick in zip(onsets, offsets):
+        lo = int(onset_tick)
+        hi = int(offset_tick)
+        if hi <= lo:
+            rel_per_trial.append(np.asarray([], dtype=np.float64))
+            continue
+        i0 = int(np.searchsorted(spikes, lo, side="left"))
+        i1 = int(np.searchsorted(spikes, hi, side=right_side))
+        chunk = spikes[i0:i1]
+        rel_per_trial.append(chunk.astype(np.float64) / fs - float(lo) / fs)
     return rel_per_trial
 
 

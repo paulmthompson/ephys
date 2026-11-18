@@ -14,6 +14,7 @@ from ephys.processing.spike_align import (
     seconds_to_ticks,
     sort_order_by_spike_count_descending,
     spikes_relative_to_events_ticks,
+    spikes_relative_to_tick_intervals,
 )
 
 
@@ -117,3 +118,32 @@ def test_ms_to_ticks_and_seconds_to_ticks() -> None:
     bad_mode: Any = "floor"
     with pytest.raises(ValueError, match="Unsupported rounding mode"):
         ms_to_ticks(2.0, 30_000.0, rounding=bad_mode)
+
+
+def test_spikes_relative_to_tick_intervals_bounds_and_validation() -> None:
+    """Interval slicing supports inclusive/exclusive offsets and validates shape."""
+    spikes = np.array([250, 100, 150, 200, 300], dtype=np.int64)
+    onsets = np.array([100, 300], dtype=np.int64)
+    offsets = np.array([200, 300], dtype=np.int64)
+
+    incl = spikes_relative_to_tick_intervals(spikes, onsets, offsets, 1000.0)
+    assert len(incl) == 2
+    assert incl[0].tolist() == pytest.approx([0.0, 0.05, 0.1])
+    assert incl[1].size == 0
+
+    excl = spikes_relative_to_tick_intervals(
+        spikes,
+        onsets,
+        offsets,
+        1000.0,
+        inclusive_offset=False,
+    )
+    assert excl[0].tolist() == pytest.approx([0.0, 0.05])
+
+    with pytest.raises(ValueError, match="same length"):
+        spikes_relative_to_tick_intervals(
+            spikes,
+            np.array([100, 200], dtype=np.int64),
+            np.array([150], dtype=np.int64),
+            1000.0,
+        )
