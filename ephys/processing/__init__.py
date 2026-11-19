@@ -1,6 +1,7 @@
 """Signal processing utilities for electrophysiology data."""
 
 from ephys.processing.basis import log_raised_cosine_basis, raised_cosine_basis
+from ephys.processing.bins import UniformBins
 from ephys.processing.resampling import whittaker_shannon_interpolate
 from ephys.processing.spike_align import (
     bin_centers,
@@ -30,6 +31,7 @@ from ephys.processing.spike_rate import (
 
 __all__ = [
     "TrialCv2Summary",
+    "UniformBins",
     "adjacent_isi_cv2",
     "bin_centers",
     "bootstrap_median_ci_by_trial",
