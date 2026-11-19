@@ -8,7 +8,10 @@ import numpy as np
 import pytest
 
 from ephys.processing.zca import (
+    _apply_zca_fit_chunked,
     _clean_sample_mask,
+    _estimate_chunked_covariance,
+    _fit_channel_stats_and_mask,
     apply_zca_fit,
     apply_zca_whitening,
     fit_zca_whitening,
@@ -285,3 +288,116 @@ def test_default_artifact_pad_is_half_ms() -> None:
 
     fit_20k = fit_zca_whitening(voltage, sampling_rate_hz=20_000.0)
     assert fit_20k.artifact_pad_samples == 10
+
+
+def _dense_reference_fit_and_apply(
+    voltage_matrix: np.ndarray,
+    *,
+    epsilon: float = 10.0,
+    robust_cov: bool = True,
+    artifact_pad_samples: int = 15,
+    rescale_amplitude: bool = True,
+) -> tuple[np.ndarray, float, np.ndarray, np.ndarray]:
+    """Reference dense NumPy ZCA implementation used before chunking."""
+    medians = np.median(voltage_matrix, axis=1, keepdims=True)
+    centered = voltage_matrix - medians
+    robust_std = np.median(np.abs(centered), axis=1, keepdims=True) * 1.4826
+    if robust_cov:
+        rejected = ~np.all(np.abs(centered) < (4.0 * robust_std), axis=0)
+        if artifact_pad_samples > 0:
+            kernel = np.ones(2 * artifact_pad_samples + 1, dtype=np.int64)
+            rejected = np.convolve(rejected.astype(np.int64), kernel, mode="same") > 0
+        covariance = np.atleast_2d(np.cov(centered[:, ~rejected]))
+    else:
+        covariance = np.atleast_2d(np.cov(centered))
+
+    zca_mat = zca_matrix_from_covariance(np.asarray(covariance, dtype=np.float64), epsilon)
+    out = voltage_matrix.copy()
+    out -= medians.astype(np.float64)
+    out[:] = zca_mat @ out
+    mean_std = float(np.mean(robust_std))
+    if rescale_amplitude:
+        out *= mean_std
+    return (
+        medians.ravel().astype(np.float64),
+        mean_std,
+        np.asarray(covariance, dtype=np.float64),
+        out,
+    )
+
+
+@pytest.mark.parametrize("dtype", [np.float64, np.float32])
+@pytest.mark.parametrize("robust_cov", [True, False])
+@pytest.mark.parametrize("fortran_order", [False, True])
+def test_decomposed_fit_and_apply_match_dense_reference(
+    dtype: type[np.floating],
+    robust_cov: bool,
+    fortran_order: bool,
+) -> None:
+    """Channel-wise + time-chunked ZCA reproduces the dense NumPy formulation."""
+    noise, _ = _spatially_correlated_noise(5, 600, seed=17)
+    contaminated = _inject_spikes(noise, np.array([120, 310, 450]), amplitude=120.0)
+    contaminated[:, 200:260] += 300.0  # spans > 1 chunk when chunk_samples=37
+    arr = np.asarray(contaminated, dtype=dtype, order="F" if fortran_order else "C")
+
+    ref_medians, ref_std, ref_cov, ref_out = _dense_reference_fit_and_apply(
+        arr,
+        epsilon=2.5,
+        robust_cov=robust_cov,
+        artifact_pad_samples=8,
+        rescale_amplitude=True,
+    )
+
+    medians, robust_std, is_clean = _fit_channel_stats_and_mask(
+        arr,
+        robust_cov=robust_cov,
+        artifact_pad_samples=8,
+        chunk_samples=37,
+    )
+    cov = _estimate_chunked_covariance(
+        arr,
+        medians,
+        is_clean=is_clean,
+        chunk_samples=37,
+    )
+    np.testing.assert_array_equal(medians.astype(np.float64), ref_medians)
+    assert float(np.mean(robust_std)) == pytest.approx(ref_std, rel=0.0, abs=0.0)
+    np.testing.assert_allclose(cov, ref_cov, rtol=1e-12, atol=1e-12)
+
+    fit = fit_zca_whitening(
+        arr,
+        epsilon=2.5,
+        robust_cov=robust_cov,
+        artifact_pad_samples=8,
+    )
+    actual_out = np.array(arr, copy=True)
+    _apply_zca_fit_chunked(
+        actual_out,
+        fit,
+        rescale_amplitude=True,
+        chunk_samples=37,
+    )
+    rtol = 1e-10 if dtype is np.float64 else 1e-6
+    atol = 1e-10 if dtype is np.float64 else 1e-5
+    np.testing.assert_allclose(actual_out, ref_out, rtol=rtol, atol=atol)
+
+
+def test_large_artifact_pad_does_not_overflow_dilation() -> None:
+    """Sustained artifacts with pad >= 64 samples stay rejected across their interior."""
+    centered = np.zeros((2, 500), dtype=np.float64)
+    centered[:, :250] = 1.0
+    centered[:, 250:] = -1.0
+    centered[:, 150:350] = 50.0
+    mask = _clean_sample_mask(centered, artifact_pad_samples=80, chunk_samples=64)
+    assert not np.any(mask[70:430])
+    assert np.all(mask[:70])
+    assert np.all(mask[430:])
+
+
+def test_single_channel_fit_and_apply() -> None:
+    """Single-channel input yields a (1, 1) covariance and valid whitened trace."""
+    voltage = _synthetic_bandpassed_voltage(n_channels=2, n_samples=400)[:1, :]
+    fit = fit_zca_whitening(voltage, good_channels=[7])
+    assert fit.covariance.shape == (1, 1)
+    whitened = apply_zca_fit(voltage.copy(), fit)
+    assert whitened.shape == voltage.shape

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from scipy.ndimage import maximum_filter1d
 
 from ephys.processing.filtering import (
     DEFAULT_INTAN_BANDPASS_ORDER,
@@ -23,6 +24,7 @@ ZCA_FIT_NPZ_VERSION = 2
 _MAD_TO_STD = 1.4826
 _DEFAULT_ARTIFACT_N_SIGMA = 4.0
 _DEFAULT_ARTIFACT_PAD_MS = 0.5
+_DEFAULT_CHUNK_SAMPLES = 262_144
 
 __all__ = [
     "ZCA_FIT_NPZ_VERSION",
@@ -182,19 +184,46 @@ def _resolve_artifact_pad_samples(
     return _validate_artifact_pad_samples(artifact_pad_samples)
 
 
+def _validate_chunk_samples(chunk_samples: int) -> int:
+    """Validate positive time-chunk length in samples."""
+    if isinstance(chunk_samples, (bool, np.bool_)):
+        msg = f"chunk_samples must be a positive int, got {chunk_samples!r}"
+        raise TypeError(msg)
+    if isinstance(chunk_samples, np.integer):
+        chunk_samples = int(chunk_samples)
+    if not isinstance(chunk_samples, int):
+        msg = f"chunk_samples must be a positive int, got {type(chunk_samples).__name__!r}"
+        raise TypeError(msg)
+    if chunk_samples < 1:
+        msg = f"chunk_samples must be positive, got {chunk_samples!r}"
+        raise ValueError(msg)
+    return chunk_samples
+
+
 def _robust_std_per_channel(centered: np.ndarray) -> np.ndarray:
     """Per-channel MAD scale with shape ``(n_channels, 1)``."""
-    return np.median(np.abs(centered), axis=1, keepdims=True) * _MAD_TO_STD
+    n_channels, n_samples = centered.shape
+    out = np.empty((n_channels, 1), dtype=centered.dtype)
+    work = np.empty(n_samples, dtype=centered.dtype)
+    for ch in range(n_channels):
+        np.abs(centered[ch], out=work)
+        out[ch, 0] = np.median(work, overwrite_input=True) * _MAD_TO_STD
+    return out
 
 
 def _dilate_rejected_mask(is_clean: np.ndarray, pad_samples: int) -> np.ndarray:
     """Expand rejected samples by ``pad_samples`` on each side."""
     if pad_samples <= 0:
         return is_clean
-    rejected = ~is_clean
-    kernel = np.ones(2 * pad_samples + 1, dtype=np.int8)
-    dilated_rejected = np.convolve(rejected.astype(np.int8), kernel, mode="same") > 0
-    return ~dilated_rejected
+    rejected = np.logical_not(is_clean)
+    maximum_filter1d(
+        rejected,
+        size=2 * pad_samples + 1,
+        output=rejected,
+        mode="constant",
+        cval=False,
+    )
+    return np.logical_not(rejected, out=rejected)
 
 
 def _clean_sample_mask(
@@ -202,12 +231,144 @@ def _clean_sample_mask(
     *,
     n_sigma: float = _DEFAULT_ARTIFACT_N_SIGMA,
     artifact_pad_samples: int = 0,
+    chunk_samples: int = _DEFAULT_CHUNK_SAMPLES,
 ) -> np.ndarray:
     """Return a boolean mask of samples to keep for covariance estimation."""
     artifact_pad_samples = _validate_artifact_pad_samples(artifact_pad_samples)
+    chunk_samples = _validate_chunk_samples(chunk_samples)
+    n_channels, n_samples = centered.shape
     robust_std = _robust_std_per_channel(centered)
-    is_clean = np.all(np.abs(centered) < (n_sigma * robust_std), axis=0)
+    is_clean = np.ones(n_samples, dtype=bool)
+    work = np.empty(min(n_samples, chunk_samples), dtype=centered.dtype)
+    for ch in range(n_channels):
+        threshold = n_sigma * robust_std[ch, 0]
+        row = centered[ch]
+        for start in range(0, n_samples, chunk_samples):
+            stop = min(start + chunk_samples, n_samples)
+            mask_slice = is_clean[start:stop]
+            if not np.any(mask_slice):
+                continue
+            buf = work[: stop - start]
+            np.abs(row[start:stop], out=buf)
+            mask_slice &= buf < threshold
     return _dilate_rejected_mask(is_clean, artifact_pad_samples)
+
+
+def _fit_channel_stats_and_mask(
+    voltage_matrix: np.ndarray,
+    *,
+    robust_cov: bool,
+    n_sigma: float = _DEFAULT_ARTIFACT_N_SIGMA,
+    artifact_pad_samples: int = 0,
+    chunk_samples: int = _DEFAULT_CHUNK_SAMPLES,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
+    """Compute 1D channel medians, MAD scales, and optional clean-sample mask.
+
+    Uses a single ``(n_samples,)`` work buffer so memory scales as
+    ``O(n_samples)`` rather than ``O(n_channels * n_samples)``.
+    """
+    chunk_samples = _validate_chunk_samples(chunk_samples)
+    n_channels, n_samples = voltage_matrix.shape
+    medians = np.empty(n_channels, dtype=voltage_matrix.dtype)
+    robust_std = np.empty(n_channels, dtype=voltage_matrix.dtype)
+    is_clean = np.ones(n_samples, dtype=bool) if robust_cov else None
+    work = np.empty(n_samples, dtype=voltage_matrix.dtype)
+
+    for ch in range(n_channels):
+        row = voltage_matrix[ch]
+        np.copyto(work, row)
+        median_ch = np.median(work, overwrite_input=True)
+        medians[ch] = median_ch
+
+        np.subtract(row, median_ch, out=work)
+        np.abs(work, out=work)
+        robust_std_ch = np.median(work, overwrite_input=True) * _MAD_TO_STD
+        robust_std[ch] = robust_std_ch
+
+        if is_clean is not None:
+            threshold = n_sigma * robust_std_ch
+            for start in range(0, n_samples, chunk_samples):
+                stop = min(start + chunk_samples, n_samples)
+                mask_slice = is_clean[start:stop]
+                if not np.any(mask_slice):
+                    continue
+                buf = work[: stop - start]
+                np.subtract(row[start:stop], median_ch, out=buf)
+                np.abs(buf, out=buf)
+                mask_slice &= buf < threshold
+
+    if is_clean is not None:
+        is_clean = _dilate_rejected_mask(is_clean, artifact_pad_samples)
+
+    return medians, robust_std, is_clean
+
+
+def _estimate_chunked_covariance(
+    voltage_matrix: np.ndarray,
+    channel_medians: np.ndarray,
+    *,
+    is_clean: np.ndarray | None,
+    chunk_samples: int = _DEFAULT_CHUNK_SAMPLES,
+) -> np.ndarray:
+    """Estimate the ``(n_channels, n_channels)`` sample covariance in chunks."""
+    chunk_samples = _validate_chunk_samples(chunk_samples)
+    n_channels, n_samples = voltage_matrix.shape
+
+    if is_clean is not None:
+        n_used = int(is_clean.sum())
+        if n_used < 2:
+            msg = (
+                "robust_cov requires at least 2 samples passing the clean "
+                f"artifact gate; got {n_used}. Try robust_cov=False."
+            )
+            raise ValueError(msg)
+    else:
+        n_used = n_samples
+
+    max_block = min(n_samples, chunk_samples)
+    chunk_buf = np.empty((n_channels, max_block), dtype=np.float64)
+    medians_col = channel_medians[:, np.newaxis]
+
+    def _fill_centered_chunk(start: int, stop: int) -> np.ndarray | None:
+        window = voltage_matrix[:, start:stop]
+        if is_clean is None:
+            selected = window
+        else:
+            mask_slice = is_clean[start:stop]
+            if np.all(mask_slice):
+                selected = window
+            else:
+                cols = np.flatnonzero(mask_slice)
+                if cols.size == 0:
+                    return None
+                selected = window[:, cols]
+
+        n_cols = int(selected.shape[1])
+        buf = chunk_buf[:, :n_cols]
+        if voltage_matrix.dtype == np.float64:
+            np.subtract(selected, medians_col, out=buf)
+        else:
+            np.copyto(buf, selected - medians_col)
+        return buf
+
+    sum_centered = np.zeros(n_channels, dtype=np.float64)
+    for start in range(0, n_samples, chunk_samples):
+        stop = min(start + chunk_samples, n_samples)
+        buf = _fill_centered_chunk(start, stop)
+        if buf is not None:
+            sum_centered += buf.sum(axis=1)
+    mean_centered = (sum_centered / float(n_used))[:, np.newaxis]
+
+    covariance = np.zeros((n_channels, n_channels), dtype=np.float64)
+    for start in range(0, n_samples, chunk_samples):
+        stop = min(start + chunk_samples, n_samples)
+        buf = _fill_centered_chunk(start, stop)
+        if buf is not None:
+            buf -= mean_centered
+            covariance += buf @ buf.T
+
+    covariance /= float(n_used - 1)
+    return covariance
 
 
 def zca_matrix_from_covariance(covariance: np.ndarray, epsilon: float) -> np.ndarray:
@@ -261,6 +422,9 @@ def fit_zca_whitening(
     -----
     Caller must bandpass-filter raw voltage before fitting. Covariance,
     medians, and robust scales describe the bandpassed signal domain.
+    Medians and MAD scales are computed channel-by-channel in a single 1D
+    work buffer and covariance is accumulated over time chunks to avoid
+    ``(n_good, n_samples)`` temporary allocations.
     """
     artifact_pad_samples = _resolve_artifact_pad_samples(
         artifact_pad_samples,
@@ -286,29 +450,21 @@ def fit_zca_whitening(
             msg = f"good_channels must have length n_channels={n_channels}; got {channel_ids.shape}"
             raise ValueError(msg)
 
-    centered = voltage_matrix - np.median(voltage_matrix, axis=1, keepdims=True)
-    robust_std = _robust_std_per_channel(centered)
-
-    if robust_cov:
-        is_clean_sample = _clean_sample_mask(
-            centered,
-            artifact_pad_samples=artifact_pad_samples,
-        )
-        n_clean = int(is_clean_sample.sum())
-        if n_clean < 2:
-            msg = (
-                "robust_cov requires at least 2 samples passing the clean "
-                f"artifact gate; got {n_clean}. Try robust_cov=False."
-            )
-            raise ValueError(msg)
-        covariance = np.cov(centered[:, is_clean_sample])
-    else:
-        covariance = np.cov(centered)
+    channel_medians, robust_std, is_clean = _fit_channel_stats_and_mask(
+        voltage_matrix,
+        robust_cov=robust_cov,
+        artifact_pad_samples=artifact_pad_samples,
+    )
+    covariance = _estimate_chunked_covariance(
+        voltage_matrix,
+        channel_medians,
+        is_clean=is_clean,
+    )
 
     return ZcaFit(
         good_channels=channel_ids,
-        covariance=np.asarray(covariance, dtype=np.float64),
-        channel_medians=np.median(voltage_matrix, axis=1).astype(np.float64),
+        covariance=covariance,
+        channel_medians=channel_medians.astype(np.float64),
         mean_robust_std=float(np.mean(robust_std)),
         epsilon=float(epsilon),
         robust_cov=bool(robust_cov),
@@ -318,6 +474,34 @@ def fit_zca_whitening(
         highcut_hz=float(highcut_hz),
         filter_order=int(filter_order),
     )
+
+
+def _apply_zca_fit_chunked(
+    voltage_matrix: np.ndarray,
+    fit: ZcaFit,
+    *,
+    rescale_amplitude: bool,
+    chunk_samples: int = _DEFAULT_CHUNK_SAMPLES,
+) -> np.ndarray:
+    """In-place chunked implementation backing :func:`apply_zca_fit`."""
+    chunk_samples = _validate_chunk_samples(chunk_samples)
+    n_channels, n_samples = voltage_matrix.shape
+    medians_col = fit.channel_medians[:, np.newaxis]
+    zca_matrix = fit.zca_matrix()
+    product_dtype = np.result_type(zca_matrix.dtype, voltage_matrix.dtype)
+    chunk_buf = np.empty((n_channels, min(n_samples, chunk_samples)), dtype=product_dtype)
+
+    for start in range(0, n_samples, chunk_samples):
+        stop = min(start + chunk_samples, n_samples)
+        block = voltage_matrix[:, start:stop]
+        block -= medians_col
+        buf = chunk_buf[:, : stop - start]
+        np.matmul(zca_matrix, block, out=buf)
+        block[:] = buf
+        if rescale_amplitude:
+            block *= fit.mean_robust_std
+
+    return voltage_matrix
 
 
 def apply_zca_fit(
@@ -346,7 +530,8 @@ def apply_zca_fit(
     Notes
     -----
     Caller must bandpass-filter before calling. Session medians from ``fit``
-    are subtracted (not snippet-local medians).
+    are subtracted (not snippet-local medians). Matrix multiplication runs in
+    time chunks so peak extra memory stays bounded.
     """
     n_channels, _ = _validate_voltage_matrix(
         voltage_matrix,
@@ -360,12 +545,11 @@ def apply_zca_fit(
         )
         raise ValueError(msg)
 
-    voltage_matrix -= fit.channel_medians[:, np.newaxis]
-    zca_matrix = fit.zca_matrix()
-    voltage_matrix[:] = zca_matrix @ voltage_matrix
-    if rescale_amplitude:
-        voltage_matrix *= fit.mean_robust_std
-    return voltage_matrix
+    return _apply_zca_fit_chunked(
+        voltage_matrix,
+        fit,
+        rescale_amplitude=rescale_amplitude,
+    )
 
 
 def apply_zca_whitening(
@@ -402,7 +586,7 @@ def apply_zca_whitening(
     robust_cov : bool, optional
         If ``True`` (default), estimate the covariance matrix using only
         samples that pass an all-channel artifact gate (see Notes). If
-        ``False``, use ``numpy.cov`` on the full centered matrix.
+        ``False``, use all centered samples.
     artifact_pad_samples : int or None, optional
         When ``robust_cov`` is enabled, also reject this many samples on
         either side of each thresholded artifact/spike sample before fitting
@@ -435,7 +619,7 @@ def apply_zca_whitening(
         robust_cov=robust_cov,
     )
     fit = fit_zca_whitening(
-        np.array(voltage_matrix, copy=True),
+        voltage_matrix,
         epsilon=epsilon,
         robust_cov=robust_cov,
         artifact_pad_samples=artifact_pad_samples,
