@@ -236,9 +236,8 @@ def spikes_relative_to_events_ticks(
         i0 = int(np.searchsorted(spike_times_ticks, lo, side="left"))
         i1 = int(np.searchsorted(spike_times_ticks, hi, side="left"))
         chunk = spike_times_ticks[i0:i1]
-        rel_s = (
-            chunk.astype(np.float64) / sampling_rate_hz
-            - float(event_tick) / sampling_rate_hz
+        rel_s = (chunk - int(event_tick)).astype(np.float64) / float(
+            sampling_rate_hz
         )
         rel_per_trial.append(rel_s)
 

@@ -170,7 +170,9 @@ def test_bin_centers_and_first_spike_jitter_ms() -> None:
         bin_centers(np.array([0.0]))
 
     assert np.isnan(first_spike_time_ms(np.array([], dtype=np.float64)))
-    assert first_spike_time_ms(np.array([0.025, 0.010, float("nan")])) == pytest.approx(10.0)
+    assert first_spike_time_ms(np.array([0.025, 0.010, float("nan")])) == pytest.approx(
+        10.0
+    )
 
     trials = [
         np.array([0.010, 0.020]),
@@ -197,3 +199,11 @@ def test_per_trial_bin_counts_and_mean_psth_rate_hz_with_uniform_bins() -> None:
     assert rates.tolist() == pytest.approx([50.0, 100.0])
     assert mean_psth_rate_hz([], bins) is None
 
+    # Large tick offsets subtract in int64 before dividing by fs_hz.
+    rel_large = spikes_relative_to_events_ticks(
+        np.array([9_999_998], dtype=np.int64),
+        np.array([10_000_000], dtype=np.int64),
+        10,
+        1000.0,
+    )
+    assert rel_large[0][0] == -0.002
