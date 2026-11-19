@@ -5,7 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from ephys.processing.spike_rate import per_trial_firing_rates_hz_in_window
+from ephys.processing.spike_rate import (
+    mean_and_sem,
+    per_trial_firing_rates_hz_in_window,
+)
 
 
 def test_per_trial_firing_rates_hz_in_window() -> None:
@@ -38,3 +41,17 @@ def test_per_trial_firing_rates_hz_in_window_validation() -> None:
             window_start_s=0.0,
             window_end_s=float("nan"),
         )
+
+
+def test_mean_and_sem_filters_non_finite_and_handles_small_samples() -> None:
+    """Mean and SEM ignore NaN/Inf and handle 0- or 1-sample inputs."""
+    mean_hz, sem_hz = mean_and_sem(
+        np.array([10.0, 20.0, np.nan, np.inf], dtype=np.float64)
+    )
+    assert mean_hz == pytest.approx(15.0)
+    assert sem_hz == pytest.approx(5.0)
+
+    assert mean_and_sem([5.0]) == (5.0, 0.0)
+
+    m_empty, s_empty = mean_and_sem([float("nan")])
+    assert np.isnan(m_empty) and np.isnan(s_empty)

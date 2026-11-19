@@ -173,3 +173,31 @@ def per_trial_firing_rates_hz_in_window(
         mask = (st >= start_s) & (st <= end_s)
         rates[i] = float(np.count_nonzero(mask)) / dur_s
     return rates
+
+
+def mean_and_sem(values: np.ndarray | Sequence[float]) -> tuple[float, float]:
+    """Compute sample mean and SEM across finite values.
+
+    Parameters
+    ----------
+    values
+        1D or multi-dimensional numeric observations (e.g., per-trial or
+        per-block firing rates in Hz). Flattened and filtered to finite
+        entries.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(mean, sem)`` using sample standard deviation (``ddof=1``). Returns
+        ``(nan, nan)`` when no finite values are present, and ``sem == 0.0``
+        when only one finite value is present.
+    """
+    arr = np.asarray(values, dtype=np.float64).ravel()
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return (float("nan"), float("nan"))
+    mean_val = float(np.mean(arr))
+    if arr.size < 2:
+        return (mean_val, 0.0)
+    sem_val = float(np.std(arr, ddof=1) / np.sqrt(arr.size))
+    return (mean_val, sem_val)

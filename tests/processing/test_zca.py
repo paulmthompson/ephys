@@ -285,4 +285,3 @@ def test_default_artifact_pad_is_half_ms() -> None:
 
     fit_20k = fit_zca_whitening(voltage, sampling_rate_hz=20_000.0)
     assert fit_20k.artifact_pad_samples == 10
-

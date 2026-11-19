@@ -94,20 +94,14 @@ class ZcaFit:
         )
         for expected, actual, name in checks:
             if float(expected) != float(actual):
-                msg = (
-                    f"ZCA fit {name}={expected!r} does not match apply "
-                    f"setting {actual!r}"
-                )
+                msg = f"ZCA fit {name}={expected!r} does not match apply setting {actual!r}"
                 raise ValueError(msg)
 
     def row_index_for_channel(self, channel: int) -> int:
         """Map a probe channel index to a row in the good-channel matrix."""
         matches = np.flatnonzero(self.good_channels == int(channel))
         if matches.size != 1:
-            msg = (
-                f"channel {channel} is not in ZCA fit good_channels "
-                f"{self.good_channels.tolist()}"
-            )
+            msg = f"channel {channel} is not in ZCA fit good_channels {self.good_channels.tolist()}"
             raise ValueError(msg)
         return int(matches[0])
 
@@ -121,10 +115,7 @@ def _validate_voltage_matrix(
 ) -> tuple[int, int]:
     """Validate a ``(n_channels, n_samples)`` float voltage matrix."""
     if not isinstance(voltage_matrix, np.ndarray):
-        msg = (
-            f"voltage_matrix must be a numpy.ndarray, got "
-            f"{type(voltage_matrix).__name__!r}"
-        )
+        msg = f"voltage_matrix must be a numpy.ndarray, got {type(voltage_matrix).__name__!r}"
         raise TypeError(msg)
     if voltage_matrix.ndim != 2:
         msg = (
@@ -140,10 +131,7 @@ def _validate_voltage_matrix(
         )
         raise ValueError(msg)
     if not np.issubdtype(voltage_matrix.dtype, np.floating):
-        msg = (
-            f"voltage_matrix must have a floating-point dtype; got "
-            f"{voltage_matrix.dtype!r}"
-        )
+        msg = f"voltage_matrix must have a floating-point dtype; got {voltage_matrix.dtype!r}"
         raise TypeError(msg)
     if epsilon <= 0:
         msg = f"epsilon must be positive, got {epsilon!r}"
@@ -152,10 +140,7 @@ def _validate_voltage_matrix(
         rescale_amplitude,
         (bool, np.bool_),
     ):
-        msg = (
-            f"rescale_amplitude must be bool, got "
-            f"{type(rescale_amplitude).__name__!r}"
-        )
+        msg = f"rescale_amplitude must be bool, got {type(rescale_amplitude).__name__!r}"
         raise TypeError(msg)
     if robust_cov is not None and not isinstance(robust_cov, (bool, np.bool_)):
         msg = f"robust_cov must be bool, got {type(robust_cov).__name__!r}"
@@ -166,10 +151,7 @@ def _validate_voltage_matrix(
 def _validate_artifact_pad_samples(artifact_pad_samples: int) -> int:
     """Validate the artifact-mask dilation half-width in samples."""
     if isinstance(artifact_pad_samples, (bool, np.bool_)):
-        msg = (
-            "artifact_pad_samples must be a non-negative int, got "
-            f"{artifact_pad_samples!r}"
-        )
+        msg = f"artifact_pad_samples must be a non-negative int, got {artifact_pad_samples!r}"
         raise TypeError(msg)
     if isinstance(artifact_pad_samples, np.integer):
         artifact_pad_samples = int(artifact_pad_samples)
@@ -180,10 +162,7 @@ def _validate_artifact_pad_samples(artifact_pad_samples: int) -> int:
         )
         raise TypeError(msg)
     if artifact_pad_samples < 0:
-        msg = (
-            "artifact_pad_samples must be non-negative, got "
-            f"{artifact_pad_samples!r}"
-        )
+        msg = f"artifact_pad_samples must be non-negative, got {artifact_pad_samples!r}"
         raise ValueError(msg)
     return artifact_pad_samples
 
@@ -304,10 +283,7 @@ def fit_zca_whitening(
     else:
         channel_ids = np.asarray(good_channels, dtype=np.int64).ravel()
         if channel_ids.shape != (n_channels,):
-            msg = (
-                "good_channels must have length n_channels="
-                f"{n_channels}; got {channel_ids.shape}"
-            )
+            msg = f"good_channels must have length n_channels={n_channels}; got {channel_ids.shape}"
             raise ValueError(msg)
 
     centered = voltage_matrix - np.median(voltage_matrix, axis=1, keepdims=True)
@@ -498,14 +474,9 @@ def load_zca_fit_npz(path: str | Path) -> ZcaFit:
     with np.load(Path(path), allow_pickle=False) as archive:
         version = int(archive["version"])
         if version not in (1, ZCA_FIT_NPZ_VERSION):
-            msg = (
-                f"Unsupported ZCA fit npz version {version}; "
-                f"expected 1 or {ZCA_FIT_NPZ_VERSION}"
-            )
+            msg = f"Unsupported ZCA fit npz version {version}; expected 1 or {ZCA_FIT_NPZ_VERSION}"
             raise ValueError(msg)
-        artifact_pad_samples = (
-            0 if version < 2 else int(archive["artifact_pad_samples"])
-        )
+        artifact_pad_samples = 0 if version < 2 else int(archive["artifact_pad_samples"])
         return ZcaFit(
             good_channels=np.asarray(archive["good_channels"], dtype=np.int64),
             covariance=np.asarray(archive["covariance"], dtype=np.float64),

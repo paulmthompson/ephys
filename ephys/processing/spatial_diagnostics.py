@@ -105,10 +105,7 @@ def compute_spatial_diagnostics(
         msg = "channel_indices must contain at least one channel"
         raise ValueError(msg)
     if indices.size < 2:
-        msg = (
-            "sample_indices must contain at least 2 samples for covariance; "
-            f"got {indices.size}"
-        )
+        msg = f"sample_indices must contain at least 2 samples for covariance; got {indices.size}"
         raise ValueError(msg)
 
     n_channels = channels.shape[0]
@@ -137,9 +134,7 @@ def compute_spatial_diagnostics(
     u_mat, singular_values, _ = np.linalg.svd(covariance)
     evals_sorted = np.sort(singular_values)[::-1]
     eval_sum = float(evals_sorted.sum())
-    dominant_fraction = (
-        float(evals_sorted[0] / eval_sum) if eval_sum > 0.0 else 0.0
-    )
+    dominant_fraction = float(evals_sorted[0] / eval_sum) if eval_sum > 0.0 else 0.0
 
     pc1 = u_mat[:, 0]
     pc1_scores = np.empty(count, dtype=np.float64)
@@ -156,13 +151,8 @@ def compute_spatial_diagnostics(
 
     residual_median_rms = float(np.sqrt(np.mean(spatial_median**2)))
     median_std = float(np.std(spatial_median))
-    if (
-        median_std > _SPATIAL_MEDIAN_MIN_STD_UV
-        and np.std(pc1_scores) > 0.0
-    ):
-        pc1_median_r: float | None = float(
-            np.corrcoef(pc1_scores, spatial_median)[0, 1]
-        )
+    if median_std > _SPATIAL_MEDIAN_MIN_STD_UV and np.std(pc1_scores) > 0.0:
+        pc1_median_r: float | None = float(np.corrcoef(pc1_scores, spatial_median)[0, 1])
     else:
         pc1_median_r = None
 
@@ -180,9 +170,7 @@ def compute_spatial_diagnostics(
             channel_values[offset : offset + width] = block
             offset += width
         channel_median = float(np.median(channel_values))
-        channel_mads[channel_row] = (
-            np.median(np.abs(channel_values - channel_median)) * _MAD_TO_STD
-        )
+        channel_mads[channel_row] = np.median(np.abs(channel_values - channel_median)) * _MAD_TO_STD
 
     return SpatialDiagnostics(
         mean_abs_off_diag_corr=mean_abs_off_diag,

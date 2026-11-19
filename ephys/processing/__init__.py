@@ -6,6 +6,7 @@ from ephys.processing.spike_align import (
     ms_to_ticks,
     seconds_to_ticks,
     spikes_relative_to_tick_intervals,
+    window_seconds_to_ticks,
 )
 from ephys.processing.spike_intervals import (
     TrialCv2Summary,
@@ -18,7 +19,10 @@ from ephys.processing.spike_intervals import (
     inter_spike_intervals,
     summarize_trial_cv2,
 )
-from ephys.processing.spike_rate import per_trial_firing_rates_hz_in_window
+from ephys.processing.spike_rate import (
+    mean_and_sem,
+    per_trial_firing_rates_hz_in_window,
+)
 
 __all__ = [
     "TrialCv2Summary",
@@ -30,6 +34,7 @@ __all__ = [
     "flatten_finite_trial_values",
     "inter_spike_intervals",
     "log_raised_cosine_basis",
+    "mean_and_sem",
     "ms_to_ticks",
     "per_trial_firing_rates_hz_in_window",
     "raised_cosine_basis",
@@ -37,4 +42,5 @@ __all__ = [
     "spikes_relative_to_tick_intervals",
     "summarize_trial_cv2",
     "whittaker_shannon_interpolate",
+    "window_seconds_to_ticks",
 ]

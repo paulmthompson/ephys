@@ -175,9 +175,7 @@ def collect_inter_spike_intervals(
     numpy.ndarray
         Flattened finite within-trial inter-spike intervals.
     """
-    isi_by_trial = tuple(
-        inter_spike_intervals(trial) for trial in spike_times_per_trial
-    )
+    isi_by_trial = tuple(inter_spike_intervals(trial) for trial in spike_times_per_trial)
     return flatten_finite_trial_values(isi_by_trial)
 
 
@@ -256,9 +254,7 @@ def summarize_trial_cv2(
         n_spiking_trials=sum(1 for trial in trials if np.asarray(trial).size > 0),
         n_cv2_trials=sum(1 for values in cv2_by_trial if values.size > 0),
         n_cv2_pairs=int(cv2_values.size),
-        median_cv2=(
-            float(np.median(cv2_values)) if cv2_values.size > 0 else float("nan")
-        ),
+        median_cv2=(float(np.median(cv2_values)) if cv2_values.size > 0 else float("nan")),
         mean_cv2=(float(np.mean(cv2_values)) if cv2_values.size > 0 else float("nan")),
         ci_low=ci_low,
         ci_high=ci_high,

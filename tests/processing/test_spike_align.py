@@ -15,6 +15,7 @@ from ephys.processing.spike_align import (
     sort_order_by_spike_count_descending,
     spikes_relative_to_events_ticks,
     spikes_relative_to_tick_intervals,
+    window_seconds_to_ticks,
 )
 
 
@@ -118,6 +119,10 @@ def test_ms_to_ticks_and_seconds_to_ticks() -> None:
     bad_mode: Any = "floor"
     with pytest.raises(ValueError, match="Unsupported rounding mode"):
         ms_to_ticks(2.0, 30_000.0, rounding=bad_mode)
+
+    assert window_seconds_to_ticks(1.0, 1.07, 30_000.0) == (30_000, 32_100)
+    with pytest.raises(ValueError, match="end_s"):
+        window_seconds_to_ticks(2.0, 1.5, 30_000.0)
 
 
 def test_spikes_relative_to_tick_intervals_bounds_and_validation() -> None:

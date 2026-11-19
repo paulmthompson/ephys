@@ -34,6 +34,7 @@ def test_whittaker_shannon_interpolate_upsample():
     max_error = np.max(error)
     assert max_error < 0.1, f"Max error {max_error} is too high"
 
+
 def test_whittaker_shannon_interpolate_multidimensional():
     """Test that upsampling works on multidimensional arrays."""
     # Create a 2D array: 5 channels, 1000 samples

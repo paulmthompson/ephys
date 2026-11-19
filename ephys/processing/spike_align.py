@@ -93,6 +93,45 @@ def seconds_to_ticks(
     return _round_scalar_ticks(sec * fs, rounding)
 
 
+def window_seconds_to_ticks(
+    start_s: float,
+    end_s: float,
+    sampling_rate_hz: float,
+    *,
+    rounding: Literal["ceil", "round"] = "round",
+) -> tuple[int, int]:
+    """Convert a time window ``[start_s, end_s]`` in seconds to DAQ ticks.
+
+    Parameters
+    ----------
+    start_s, end_s
+        Inclusive window start and end times in seconds (must be finite with
+        ``end_s >= start_s``).
+    sampling_rate_hz
+        Acquisition sampling rate in hertz (must be finite and positive).
+    rounding
+        ``"round"`` (default, nearest integer tick) or ``"ceil"``.
+
+    Returns
+    -------
+    tuple[int, int]
+        ``(tick_start, tick_end)`` in integer DAQ ticks.
+
+    Raises
+    ------
+    ValueError
+        If ``start_s`` or ``end_s`` is non-finite, ``end_s < start_s``,
+        ``sampling_rate_hz`` is not finite and positive, or ``rounding`` is
+        unsupported.
+    """
+    tick_start = seconds_to_ticks(start_s, sampling_rate_hz, rounding=rounding)
+    tick_end = seconds_to_ticks(end_s, sampling_rate_hz, rounding=rounding)
+    if float(end_s) < float(start_s):
+        msg = f"end_s ({end_s}) must be >= start_s ({start_s})"
+        raise ValueError(msg)
+    return tick_start, tick_end
+
+
 def ms_to_ticks(
     ms: float,
     sampling_rate_hz: float,
@@ -194,10 +233,7 @@ def spikes_relative_to_events_ticks(
         i0 = int(np.searchsorted(spike_times_ticks, lo, side="left"))
         i1 = int(np.searchsorted(spike_times_ticks, hi, side="left"))
         chunk = spike_times_ticks[i0:i1]
-        rel_s = (
-            chunk.astype(np.float64) / sampling_rate_hz
-            - float(event_tick) / sampling_rate_hz
-        )
+        rel_s = chunk.astype(np.float64) / sampling_rate_hz - float(event_tick) / sampling_rate_hz
         rel_per_trial.append(rel_s)
 
     return rel_per_trial
