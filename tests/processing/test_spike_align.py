@@ -9,12 +9,16 @@ import pytest
 
 from ephys.processing.spike_align import (
     apply_trial_order,
+    bin_centers,
+    collect_first_spike_jitter_ms,
     event_ticks_greedy_non_overlapping_half_windows,
+    first_spike_time_ms,
     ms_to_ticks,
     seconds_to_ticks,
     sort_order_by_spike_count_descending,
     spikes_relative_to_events_ticks,
     spikes_relative_to_tick_intervals,
+    validate_tick_intervals,
     window_seconds_to_ticks,
 )
 
@@ -152,3 +156,26 @@ def test_spikes_relative_to_tick_intervals_bounds_and_validation() -> None:
             np.array([150], dtype=np.int64),
             1000.0,
         )
+    with pytest.raises(ValueError, match="after onsets"):
+        validate_tick_intervals(onsets, offsets, require_positive_duration=True)
+
+
+def test_bin_centers_and_first_spike_jitter_ms() -> None:
+    """Bin centers and median-centered first-spike jitter handle edge cases."""
+    assert bin_centers(np.array([0.0, 1.0, 3.0])).tolist() == pytest.approx([0.5, 2.0])
+    with pytest.raises(ValueError, match="at least 2"):
+        bin_centers(np.array([0.0]))
+
+    assert np.isnan(first_spike_time_ms(np.array([], dtype=np.float64)))
+    assert first_spike_time_ms(np.array([0.025, 0.010, float("nan")])) == pytest.approx(10.0)
+
+    trials = [
+        np.array([0.010, 0.020]),
+        np.array([], dtype=np.float64),
+        np.array([0.012]),
+        np.array([0.020]),
+    ]
+    jitter = collect_first_spike_jitter_ms(trials)
+    assert jitter is not None
+    assert jitter.tolist() == pytest.approx([-2.0, 0.0, 8.0])
+    assert collect_first_spike_jitter_ms([np.array([], dtype=np.float64)]) is None

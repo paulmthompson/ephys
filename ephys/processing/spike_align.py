@@ -10,6 +10,7 @@ before gathering so trial windows do not overlap.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from typing import Literal
 
 import numpy as np
@@ -233,10 +234,52 @@ def spikes_relative_to_events_ticks(
         i0 = int(np.searchsorted(spike_times_ticks, lo, side="left"))
         i1 = int(np.searchsorted(spike_times_ticks, hi, side="left"))
         chunk = spike_times_ticks[i0:i1]
-        rel_s = chunk.astype(np.float64) / sampling_rate_hz - float(event_tick) / sampling_rate_hz
+        rel_s = (
+            chunk.astype(np.float64) / sampling_rate_hz
+            - float(event_tick) / sampling_rate_hz
+        )
         rel_per_trial.append(rel_s)
 
     return rel_per_trial
+
+
+def validate_tick_intervals(
+    onset_ticks: np.ndarray,
+    offset_ticks: np.ndarray,
+    *,
+    require_positive_duration: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Validate and flatten paired DAQ tick interval arrays.
+
+    Parameters
+    ----------
+    onset_ticks, offset_ticks
+        Equal-length interval start and end bounds in DAQ ticks.
+    require_positive_duration
+        When ``True``, require ``offset_ticks > onset_ticks`` for every row.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        Flattened ``int64`` ``(onsets, offsets)`` arrays.
+
+    Raises
+    ------
+    ValueError
+        If ``onset_ticks`` and ``offset_ticks`` differ in length, or if
+        ``require_positive_duration`` is ``True`` and any ``offset <= onset``.
+    """
+    onsets = np.asarray(onset_ticks, dtype=np.int64).ravel()
+    offsets = np.asarray(offset_ticks, dtype=np.int64).ravel()
+    if onsets.shape != offsets.shape:
+        msg = (
+            "onset_ticks and offset_ticks must have the same length; "
+            f"got {onsets.shape[0]} and {offsets.shape[0]}"
+        )
+        raise ValueError(msg)
+    if require_positive_duration and np.any(offsets <= onsets):
+        raise ValueError("all interval offsets must be after onsets")
+    return onsets, offsets
 
 
 def spikes_relative_to_tick_intervals(
@@ -279,14 +322,9 @@ def spikes_relative_to_tick_intervals(
         msg = f"sampling_rate_hz must be finite and positive; got {sampling_rate_hz}"
         raise ValueError(msg)
 
-    onsets = np.asarray(onset_ticks, dtype=np.int64).ravel()
-    offsets = np.asarray(offset_ticks, dtype=np.int64).ravel()
-    if onsets.shape != offsets.shape:
-        msg = (
-            f"onset_ticks and offset_ticks must have the same length; "
-            f"got {onsets.shape[0]} and {offsets.shape[0]}"
-        )
-        raise ValueError(msg)
+    onsets, offsets = validate_tick_intervals(
+        onset_ticks, offset_ticks, require_positive_duration=False
+    )
 
     spikes = np.sort(
         np.asarray(spike_times_ticks, dtype=np.int64).ravel(),
@@ -588,3 +626,77 @@ def mean_spike_probability_per_bin(
     if h.ndim != 2:
         h = np.stack(trial_histograms, axis=0)
     return np.mean(h, axis=0)
+
+
+def bin_centers(bin_edges: np.ndarray) -> np.ndarray:
+    """Compute midpoint centers from 1D histogram bin edges.
+
+    Parameters
+    ----------
+    bin_edges
+        1D array of at least two bin boundaries.
+
+    Returns
+    -------
+    np.ndarray
+        ``float64`` array of length ``len(bin_edges) - 1`` holding
+        ``0.5 * (edges[:-1] + edges[1:])``.
+
+    Raises
+    ------
+    ValueError
+        If fewer than two bin edges are supplied.
+    """
+    edges = np.asarray(bin_edges, dtype=np.float64).ravel()
+    if edges.size < 2:
+        raise ValueError("bin_edges must contain at least 2 boundaries")
+    return 0.5 * (edges[:-1] + edges[1:])
+
+
+def first_spike_time_ms(rel_s: np.ndarray) -> float:
+    """Return the earliest finite spike time in a trial window, in milliseconds.
+
+    Parameters
+    ----------
+    rel_s
+        Spike times in seconds relative to the trial alignment reference.
+
+    Returns
+    -------
+    float
+        Earliest spike time in milliseconds when at least one finite spike is
+        present; otherwise ``nan``.
+    """
+    spikes = np.asarray(rel_s, dtype=np.float64).ravel()
+    spikes = spikes[np.isfinite(spikes)]
+    if spikes.size < 1:
+        return float("nan")
+    return float(np.min(spikes)) * 1000.0
+
+
+def collect_first_spike_jitter_ms(
+    spike_times_per_trial_s: Sequence[np.ndarray],
+) -> np.ndarray | None:
+    """Collect median-centered first-spike jitter (ms) across spiking trials.
+
+    Parameters
+    ----------
+    spike_times_per_trial_s
+        Per-trial spike-time arrays in seconds relative to each trial's
+        alignment reference.
+
+    Returns
+    -------
+    np.ndarray or None
+        ``first_spike_ms - median(first_spike_ms)`` for every trial containing
+        at least one finite spike, or ``None`` when no trial qualifies.
+    """
+    first_ms = [
+        t_ms
+        for trial in spike_times_per_trial_s
+        if math.isfinite(t_ms := first_spike_time_ms(trial))
+    ]
+    if not first_ms:
+        return None
+    arr = np.asarray(first_ms, dtype=np.float64)
+    return arr - float(np.median(arr))
