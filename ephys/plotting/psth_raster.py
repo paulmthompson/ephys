@@ -21,6 +21,8 @@ import matplotlib.axes
 import numpy as np
 from pydantic import BaseModel, Field
 
+from ephys.processing.bins import UniformBins
+
 RasterTrialSort = Literal[
     "first_spike",
     "spike_count",
@@ -74,7 +76,7 @@ class PsthOptions(BaseModel):
 def plot_psth(
     ax: matplotlib.axes.Axes,
     hist: np.ndarray,
-    bin_edges: np.ndarray,
+    bin_edges: UniformBins | np.ndarray,
     max_y: float,
     *,
     blank_style: bool = False,
@@ -84,52 +86,64 @@ def plot_psth(
     linewidth: float = 0.85,
     zorder: float | None = None,
 ) -> None:
-    """Draw a PSTH as outline-only left-aligned bars on ``bin_edges``.
+    """Draw a PSTH as an outline step trace spanning all ``bin_edges``.
 
     Parameters
     ----------
+    ax
+        Target Matplotlib axes.
+    hist
+        1D binned PSTH heights of length ``n_bins``.
+    bin_edges
+        :class:`~ephys.processing.bins.UniformBins` grid or 1D uniform boundary
+        array of length ``n_bins + 1``.
+    max_y
+        Upper y-axis limit.
+    blank_style
+        When True, hide all spines and ticks.
     facecolor
         Outline color when ``edgecolor`` is omitted (default black).
     edgecolor
-        Bar outline color; defaults to ``facecolor``.
+        Step outline color; defaults to ``facecolor``.
     alpha
         Outline alpha (use < 1 for overlays).
     linewidth
         Outline width in points.
     zorder
         Artist stacking order when overlaying multiple PSTHs.
-    """
-    bin_edges = np.asarray(bin_edges, dtype=float).ravel()
-    hist = np.asarray(hist, dtype=float).ravel()
-    if bin_edges.size < 2:
-        return
-    n_bins = bin_edges.size - 1
-    if hist.size != n_bins:
-        n = min(hist.size, n_bins)
-        hist = hist[:n]
-        bin_edges = bin_edges[: n + 1]
-        n_bins = bin_edges.size - 1
-    if n_bins < 1:
-        return
 
-    t0, t1 = float(bin_edges[0]), float(bin_edges[-1])
+    Raises
+    ------
+    ValueError
+        If ``hist`` length does not match ``bins.n_bins`` or ``bin_edges`` is
+        not a valid uniform edge vector.
+    """
+    bins = (
+        bin_edges
+        if isinstance(bin_edges, UniformBins)
+        else UniformBins.from_edges(bin_edges)
+    )
+    hist_arr = np.asarray(hist, dtype=float).ravel()
+    if hist_arr.size != bins.n_bins:
+        msg = (
+            f"hist length ({hist_arr.size}) must match bins.n_bins "
+            f"({bins.n_bins})"
+        )
+        raise ValueError(msg)
 
     ec = edgecolor if edgecolor is not None else facecolor
-    extra: dict[str, float] = {}
-    if zorder is not None:
-        extra["zorder"] = float(zorder)
-
-    ax.step(
-        bin_edges[:-1],
-        hist,
-        where="post",
+    step_patch = ax.stairs(
+        hist_arr,
+        bins.edges,
+        baseline=None,
         color=ec,
         linewidth=linewidth,
         alpha=alpha,
-        **extra,
     )
+    if zorder is not None:
+        step_patch.set_zorder(float(zorder))
 
-    ax.set_xlim(t0, t1)
+    ax.set_xlim(*bins.limits)
     ax.set_ylim(0, max_y)
 
     if blank_style:

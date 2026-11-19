@@ -13,7 +13,6 @@ from matplotlib import pyplot as plt
 from ephys.plotting.modulation_histogram import (
     ModulationHistogramOptions,
     draw_modulation_histogram_into,
-    histogram_edges,
     log2_ratio,
     log2_ratio_from_paired,
     resolve_histogram_x_limits,
@@ -56,14 +55,6 @@ def test_resolve_histogram_x_limits_explicit() -> None:
     """Explicit xlim is returned unchanged."""
     lo, hi = resolve_histogram_x_limits(np.array([0.0, 1.0]), xlim=(-2.0, 2.0))
     assert (lo, hi) == (-2.0, 2.0)
-
-
-def test_histogram_edges_count() -> None:
-    """Edge array length is n_bins + 1."""
-    edges = histogram_edges(-2.0, 2.0, 10)
-    assert edges.size == 11
-    assert edges[0] == -2.0
-    assert edges[-1] == 2.0
 
 
 def test_draw_modulation_histogram_into_creates_axes() -> None:

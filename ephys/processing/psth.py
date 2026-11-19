@@ -1,8 +1,8 @@
-"""Per-trial PSTH summaries and **heatmap-oriented row ordering** for populations.
+"""Per-trial PSTH summaries and heatmap-oriented row ordering for populations.
 
 This module builds mean PSTHs from onset- or offset-aligned spike lists and
 derives per-row peak times and stable sort orders. Those statistics are the
-primary inputs for **ordering units in population heatmaps** (and for placing
+primary inputs for ordering units in population heatmaps (and for placing
 points on contact-onset parallel-coordinate axes) so nearby rows reflect
 similar response latencies rather than arbitrary session or unit order.
 
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ephys.processing.bins import UniformBins
 from ephys.processing.spike_align import (
     mean_spike_probability_per_bin,
     per_trial_bin_counts,
@@ -21,7 +22,7 @@ from ephys.processing.spike_align import (
 
 def mean_psth_from_relative_spikes(
     rel_per_trial: list[np.ndarray],
-    bin_edges: np.ndarray,
+    bin_edges: UniformBins | np.ndarray,
 ) -> np.ndarray | None:
     """Mean spike count per bin across trials; shape ``(n_bins,)``.
 
@@ -30,7 +31,8 @@ def mean_psth_from_relative_spikes(
     rel_per_trial
         Spike times (seconds) relative to one alignment event per trial.
     bin_edges
-        Shared histogram edges in seconds.
+        Shared :class:`~ephys.processing.bins.UniformBins` grid or monotonic
+        histogram edges in seconds.
 
     Returns
     -------
@@ -84,19 +86,18 @@ def burst_trial_fraction_within_onset_window(
 
 
 def peak_bin_center_times_from_mean_psth(
-    mean_rows: np.ndarray, bin_edges: np.ndarray
+    mean_rows: np.ndarray,
+    bin_edges: UniformBins | np.ndarray,
 ) -> np.ndarray:
     """Time of the maximum mean count in each PSTH row (bin center at argmax).
-
-    This is the per-unit heuristic used to order population heatmaps and to
-    place points on contact-onset parallel-coordinate axes.
 
     Parameters
     ----------
     mean_rows
         Shape ``(n_rows, n_bins)`` (e.g. mean onset PSTH per unit).
     bin_edges
-        Histogram edges of length ``n_bins + 1``.
+        :class:`~ephys.processing.bins.UniformBins` grid or 1D uniform
+        histogram edges of length ``n_bins + 1``.
 
     Returns
     -------
@@ -106,10 +107,16 @@ def peak_bin_center_times_from_mean_psth(
     """
     if mean_rows.size == 0:
         return np.array([], dtype=np.float64)
-    n_bins = int(bin_edges.size) - 1
-    if n_bins < 1 or mean_rows.shape[1] != n_bins:
-        raise ValueError("bin_edges and mean_rows column count are inconsistent")
-    centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    bins = (
+        bin_edges
+        if isinstance(bin_edges, UniformBins)
+        else UniformBins.from_edges(bin_edges)
+    )
+    if mean_rows.shape[1] != bins.n_bins:
+        raise ValueError(
+            "bin_edges and mean_rows column count are inconsistent"
+        )
+    centers = bins.centers
     peak_t = np.empty(mean_rows.shape[0], dtype=np.float64)
     for i in range(mean_rows.shape[0]):
         row = mean_rows[i]
@@ -117,19 +124,19 @@ def peak_bin_center_times_from_mean_psth(
     return peak_t
 
 
-def peak_time_row_order(mean_rows: np.ndarray, bin_edges: np.ndarray) -> np.ndarray:
+def peak_time_row_order(
+    mean_rows: np.ndarray,
+    bin_edges: UniformBins | np.ndarray,
+) -> np.ndarray:
     """Row indices sorted by peak-response time (ascending).
-
-    Uses :func:`peak_bin_center_times_from_mean_psth` then a stable argsort.
-    Rows with all zeros share the first bin center and sort by original order
-    among equals.
 
     Parameters
     ----------
     mean_rows
         Shape ``(n_rows, n_bins)``.
     bin_edges
-        Histogram edges of length ``n_bins + 1``.
+        :class:`~ephys.processing.bins.UniformBins` grid or 1D uniform
+        histogram edges of length ``n_bins + 1``.
 
     Returns
     -------

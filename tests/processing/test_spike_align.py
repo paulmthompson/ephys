@@ -7,13 +7,16 @@ from typing import Any
 import numpy as np
 import pytest
 
+from ephys.processing.bins import UniformBins
 from ephys.processing.spike_align import (
     apply_trial_order,
     bin_centers,
     collect_first_spike_jitter_ms,
     event_ticks_greedy_non_overlapping_half_windows,
     first_spike_time_ms,
+    mean_psth_rate_hz,
     ms_to_ticks,
+    per_trial_bin_counts,
     seconds_to_ticks,
     sort_order_by_spike_count_descending,
     spikes_relative_to_events_ticks,
@@ -179,3 +182,18 @@ def test_bin_centers_and_first_spike_jitter_ms() -> None:
     assert jitter is not None
     assert jitter.tolist() == pytest.approx([-2.0, 0.0, 8.0])
     assert collect_first_spike_jitter_ms([np.array([], dtype=np.float64)]) is None
+
+
+def test_per_trial_bin_counts_and_mean_psth_rate_hz_with_uniform_bins() -> None:
+    """UniformBins integrates directly with per_trial_bin_counts and rate_hz."""
+    bins = UniformBins.from_width(0.0, 0.02, 0.01)
+    trials = [np.array([0.005, 0.020]), np.array([0.015])]
+    counts = per_trial_bin_counts(trials, bins)
+    assert [c.tolist() for c in counts] == [[1.0, 1.0], [0.0, 1.0]]
+    assert bin_centers(bins).tolist() == pytest.approx([0.005, 0.015])
+
+    rates = mean_psth_rate_hz(trials, bins)
+    assert rates is not None
+    assert rates.tolist() == pytest.approx([50.0, 100.0])
+    assert mean_psth_rate_hz([], bins) is None
+

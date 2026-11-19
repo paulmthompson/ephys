@@ -10,6 +10,7 @@ from matplotlib.gridspec import SubplotSpec
 from pydantic import BaseModel, Field, model_validator
 
 from ephys.plotting.log_log_scatter import positive_finite_mask
+from ephys.processing.bins import UniformBins
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -128,11 +129,6 @@ def resolve_histogram_x_limits(
     return lo_v - pad, hi_v + pad
 
 
-def histogram_edges(lo: float, hi: float, n_bins: int) -> np.ndarray:
-    """Uniform bin edges over ``[lo, hi]``."""
-    return np.linspace(float(lo), float(hi), int(n_bins) + 1, dtype=np.float64)
-
-
 def draw_modulation_histogram_empty_placeholder(
     fig: Figure,
     cell: SubplotSpec,
@@ -216,11 +212,11 @@ def draw_modulation_histogram_into(
         xlim=opts.xlim,
         pad_fraction=opts.pad_fraction,
     )
-    edges = histogram_edges(lo, hi, opts.n_bins)
+    bins = UniformBins.from_count(lo, hi, opts.n_bins)
     ax = fig.add_subplot(cell)
     counts, _, _ = ax.hist(
         finite,
-        bins=edges.tolist(),
+        bins=bins.edges.tolist(),
         align="mid",
         color=opts.bar_color,
         edgecolor=opts.bar_edgecolor,

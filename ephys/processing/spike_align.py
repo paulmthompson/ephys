@@ -15,6 +15,8 @@ from typing import Literal
 
 import numpy as np
 
+from ephys.processing.bins import UniformBins
+
 
 def spike_times_ticks_from_seconds(
     spike_times_s: np.ndarray,
@@ -568,8 +570,8 @@ def apply_trial_order(
 
 
 def per_trial_bin_counts(
-    spike_times_per_trial_s: list[np.ndarray],
-    bin_edges_s: np.ndarray,
+    spike_times_per_trial_s: Sequence[np.ndarray],
+    bin_edges_s: UniformBins | np.ndarray,
 ) -> list[np.ndarray]:
     """Histogram spike counts per trial using shared bin edges.
 
@@ -578,20 +580,23 @@ def per_trial_bin_counts(
     spike_times_per_trial_s
         One 1D ``float`` array per trial (seconds in the same reference frame).
     bin_edges_s
-        Monotonic bin edges in seconds (length ``n_bins + 1``), shared by all
-        trials.
+        :class:`~ephys.processing.bins.UniformBins` grid or 1D monotonic bin
+        edges in seconds (length ``n_bins + 1``), shared by all trials.
 
     Returns
     -------
     list[np.ndarray]
-        Per-trial count vectors, each length ``len(bin_edges_s) - 1``, dtype
-        ``float64`` (same as ``numpy.histogram`` counts cast to float).
+        Per-trial count vectors, each length ``n_bins``, dtype ``float64``.
 
     Notes
     -----
-    Uses :func:`numpy.histogram` with ``bins=bin_edges_s`` for each trial.
+    Uses :func:`numpy.histogram` with ``bins`` boundaries for each trial.
     """
-    edges = np.asarray(bin_edges_s, dtype=float).ravel()
+    edges = (
+        bin_edges_s.edges
+        if isinstance(bin_edges_s, UniformBins)
+        else np.asarray(bin_edges_s, dtype=float).ravel()
+    )
     out: list[np.ndarray] = []
     for rel in spike_times_per_trial_s:
         rel_f = np.asarray(rel, dtype=float).ravel()
@@ -628,25 +633,56 @@ def mean_spike_probability_per_bin(
     return np.mean(h, axis=0)
 
 
-def bin_centers(bin_edges: np.ndarray) -> np.ndarray:
+def mean_psth_rate_hz(
+    spike_times_per_trial_s: Sequence[np.ndarray],
+    bins: UniformBins,
+) -> np.ndarray | None:
+    """Compute mean PSTH firing rate (Hz) across trials on uniform bins.
+
+    Parameters
+    ----------
+    spike_times_per_trial_s
+        Per-trial relative spike times in seconds.
+    bins
+        Uniform bin grid in seconds.
+
+    Returns
+    -------
+    np.ndarray or None
+        1D ``float64`` vector of length ``bins.n_bins`` in Hz
+        (``mean_counts / bins.width``), or ``None`` when no trials are
+        provided.
+    """
+    if not isinstance(bins, UniformBins):
+        msg = f"bins must be a UniformBins instance, got {type(bins).__name__}"
+        raise TypeError(msg)
+    if not spike_times_per_trial_s:
+        return None
+    counts = per_trial_bin_counts(spike_times_per_trial_s, bins)
+    return mean_spike_probability_per_bin(counts) / bins.width
+
+
+def bin_centers(bin_edges: UniformBins | np.ndarray) -> np.ndarray:
     """Compute midpoint centers from 1D histogram bin edges.
 
     Parameters
     ----------
     bin_edges
-        1D array of at least two bin boundaries.
+        :class:`~ephys.processing.bins.UniformBins` grid or 1D array of at
+        least two bin boundaries.
 
     Returns
     -------
     np.ndarray
-        ``float64`` array of length ``len(bin_edges) - 1`` holding
-        ``0.5 * (edges[:-1] + edges[1:])``.
+        ``float64`` array of length ``n_bins`` holding midpoint centers.
 
     Raises
     ------
     ValueError
         If fewer than two bin edges are supplied.
     """
+    if isinstance(bin_edges, UniformBins):
+        return bin_edges.centers
     edges = np.asarray(bin_edges, dtype=np.float64).ravel()
     if edges.size < 2:
         raise ValueError("bin_edges must contain at least 2 boundaries")

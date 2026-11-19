@@ -12,6 +12,8 @@ from matplotlib.patches import Polygon
 from matplotlib.ticker import MaxNLocator
 from pydantic import BaseModel, Field, model_validator
 
+from ephys.processing.bins import UniformBins
+
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
@@ -336,20 +338,6 @@ def apply_scatter_ticks(
         _apply_shared_scatter_ticks(ax, lo_x, hi_x)
 
 
-def marginal_histogram_edges(
-    lo_x: float,
-    hi_x: float,
-    lo_y: float,
-    hi_y: float,
-    n_bins: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Bin edges for top (x) and right (y) marginals, aligned to scatter limits."""
-    n = int(n_bins)
-    edges_x = np.linspace(float(lo_x), float(hi_x), n + 1, dtype=np.float64)
-    edges_y = np.linspace(float(lo_y), float(hi_y), n + 1, dtype=np.float64)
-    return edges_x, edges_y
-
-
 def diff_inset_xy_for_difference(d: float, diagonal_pos: float) -> tuple[float, float]:
     """Map ``y - x = d`` to scatter coordinates on the unity line anchor.
 
@@ -359,16 +347,10 @@ def diff_inset_xy_for_difference(d: float, diagonal_pos: float) -> tuple[float, 
     return (s - 0.5 * float(d), s + 0.5 * float(d))
 
 
-def diff_inset_symmetric_edges(d_half_extent: float, n_bins: int) -> np.ndarray:
-    """Bin edges for ``y - x`` over ``[-extent, +extent]``."""
+def _diff_inset_bins(d_half_extent: float, n_bins: int) -> UniformBins:
+    """Uniform difference-inset bins over ``[-extent, +extent]``."""
     ext = float(d_half_extent)
-    return np.linspace(-ext, ext, int(n_bins) + 1, dtype=np.float64)
-
-
-def diff_inset_bin_width(d_half_extent: float, n_bins: int) -> float:
-    """Width of one inset bin along the ``y - x`` axis."""
-    n = max(int(n_bins), 1)
-    return (2.0 * float(d_half_extent)) / float(n)
+    return UniformBins.from_count(-ext, ext, max(int(n_bins), 1))
 
 
 class DiffInsetBar(NamedTuple):
@@ -390,27 +372,19 @@ def diff_inset_bars(
     """Build inset bars for the core range and optional low/high overflow tails."""
     d = np.asarray(diffs, dtype=np.float64)
     ext = float(d_half_extent)
-    edges = diff_inset_symmetric_edges(ext, n_bins)
-    core_counts, _ = np.histogram(d, bins=edges)
+    inset_bins = _diff_inset_bins(ext, n_bins)
+    core_counts = inset_bins.histogram_counts(d)
+    lefts = inset_bins.left_edges
+    rights = inset_bins.right_edges
     bars: list[DiffInsetBar] = []
     if overflow_bins:
-        width = diff_inset_bin_width(ext, n_bins)
         low_n = int(np.sum(d < -ext))
-        high_n = int(np.sum(d > ext))
-        bars.append(DiffInsetBar(-ext - width, -ext, low_n, True))
-    for k in range(int(core_counts.size)):
-        bars.append(
-            DiffInsetBar(
-                float(edges[k]),
-                float(edges[k + 1]),
-                int(core_counts[k]),
-                False,
-            )
-        )
+        bars.append(DiffInsetBar(-ext - inset_bins.width, -ext, low_n, True))
+    for e0, e1, count in zip(lefts, rights, core_counts, strict=True):
+        bars.append(DiffInsetBar(float(e0), float(e1), int(count), False))
     if overflow_bins:
-        width = diff_inset_bin_width(ext, n_bins)
         high_n = int(np.sum(d > ext))
-        bars.append(DiffInsetBar(ext, ext + width, high_n, True))
+        bars.append(DiffInsetBar(ext, ext + inset_bins.width, high_n, True))
     return bars
 
 
@@ -465,7 +439,7 @@ def _draw_diff_inset_axis(
     d_lo = -ext
     d_hi = ext
     if overflow_bins:
-        width = diff_inset_bin_width(ext, n_bins)
+        width = _diff_inset_bins(ext, n_bins).width
         d_lo -= width
         d_hi += width
     x0, y0 = diff_inset_xy_for_difference(d_lo, diagonal_pos)
@@ -695,7 +669,8 @@ def draw_scatter_marginals_into(
     )
 
     n_bins = int(opts.marginal_hist_bins)
-    edges_x, edges_y = marginal_histogram_edges(lo_x, hi_x, lo_y, hi_y, n_bins)
+    bins_x = UniformBins.from_count(lo_x, hi_x, n_bins)
+    bins_y = UniformBins.from_count(lo_y, hi_y, n_bins)
     rx_marg = _clip_to_limits(rx, lo_x, hi_x)
     wy_marg = _clip_to_limits(wy, lo_y, hi_y)
 
@@ -739,19 +714,19 @@ def draw_scatter_marginals_into(
 
     counts_top, _, _ = ax_top.hist(
         rx_marg,
-        bins=edges_x.tolist(),
+        bins=bins_x.edges.tolist(),
         align="mid",
         color="k",
         edgecolor="k",
         linewidth=0.25,
         zorder=1,
     )
-    ax_top.set_xlim(lo_x, hi_x)
+    ax_top.set_xlim(*bins_x.limits)
     ax_top.set_axis_off()
 
     counts_r, _, _ = ax_right.hist(
         wy_marg,
-        bins=edges_y.tolist(),
+        bins=bins_y.edges.tolist(),
         orientation="horizontal",
         align="mid",
         color="k",
@@ -759,7 +734,7 @@ def draw_scatter_marginals_into(
         linewidth=0.25,
         zorder=1,
     )
-    ax_right.set_ylim(lo_y, hi_y)
+    ax_right.set_ylim(*bins_y.limits)
     ax_right.set_axis_off()
     ct = np.asarray(counts_top)
     top_max = float(np.max(ct)) if ct.size else 0.0
