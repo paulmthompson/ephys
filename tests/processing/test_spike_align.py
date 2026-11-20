@@ -18,7 +18,9 @@ from ephys.processing.spike_align import (
     ms_to_ticks,
     per_trial_bin_counts,
     seconds_to_ticks,
+    sort_order_by_covariate,
     sort_order_by_spike_count_descending,
+    sort_order_by_spike_count_then_first_spike,
     spikes_relative_to_events_ticks,
     spikes_relative_to_tick_intervals,
     validate_tick_intervals,
@@ -170,9 +172,7 @@ def test_bin_centers_and_first_spike_jitter_ms() -> None:
         bin_centers(np.array([0.0]))
 
     assert np.isnan(first_spike_time_ms(np.array([], dtype=np.float64)))
-    assert first_spike_time_ms(np.array([0.025, 0.010, float("nan")])) == pytest.approx(
-        10.0
-    )
+    assert first_spike_time_ms(np.array([0.025, 0.010, float("nan")])) == pytest.approx(10.0)
 
     trials = [
         np.array([0.010, 0.020]),
@@ -207,3 +207,35 @@ def test_per_trial_bin_counts_and_mean_psth_rate_hz_with_uniform_bins() -> None:
         1000.0,
     )
     assert rel_large[0][0] == -0.002
+
+
+def test_raster_trial_sorting_by_count_first_spike_and_covariate() -> None:
+    """Raster sort helpers break count ties by first spike and place NaN covariates last."""
+    trials = [
+        np.array([0.05, 0.06]),
+        np.array([0.01, 0.02]),
+        np.array([0.02, 0.03, 0.04]),
+        np.array([0.03]),
+        np.array([]),
+    ]
+    order = sort_order_by_spike_count_then_first_spike(trials)
+    assert order.tolist() == [4, 3, 1, 0, 2]
+    sorted_trials = apply_trial_order(trials, order)
+    assert [len(t) for t in sorted_trials] == [0, 1, 2, 2, 3]
+
+    unique_trials = [
+        np.array([0.01, 0.02, 0.03]),
+        np.array([0.04]),
+        np.array([0.05, 0.06]),
+    ]
+    assert (
+        sort_order_by_spike_count_then_first_spike(unique_trials).tolist()
+        == sort_order_by_spike_count_descending(unique_trials)[::-1].tolist()
+    )
+
+    asc = sort_order_by_covariate(np.array([3.0, np.nan, 1.0, 2.0, np.nan]), ascending=True)
+    assert asc.tolist() == [2, 3, 0, 1, 4]
+    desc = sort_order_by_covariate(np.array([1.0, np.nan, 3.0, 2.0]), ascending=False)
+    assert desc.tolist() == [2, 3, 0, 1]
+    ties = sort_order_by_covariate(np.array([2.0, 2.0, 1.0]), ascending=True)
+    assert ties.tolist() == [2, 0, 1]

@@ -6,12 +6,21 @@ import numpy as np
 import pytest
 
 from ephys.processing.basis import (
+    LogRaisedCosineBasisOptions,
+    RaisedCosineBasisOptions,
     acausal_basis_columns,
+    build_basis,
+    build_signed_temporal_basis,
     causal_basis_columns,
+    lag_bins,
+    lag_knot_centers_s,
+    lag_offset_bins,
+    lead_bins,
     lead_time_raised_cosine_basis,
     log_raised_cosine_basis,
     raised_cosine_basis,
     signed_event_basis,
+    signed_event_knot_centers_s,
 )
 
 
@@ -160,3 +169,58 @@ def test_reconstructed_filter_is_continuous_at_onset() -> None:
     filt = beta @ basis.T
     assert filt[n_leads - 1] > 0.0
     assert filt[n_leads] > 0.0
+
+
+def test_lag_lead_and_offset_bin_conversions_and_knot_shifts() -> None:
+    """Duration helpers round seconds to bins and shift knot centers by lag_offset_s."""
+    dt_s = 0.001
+    assert lag_bins(0.01, dt_s) == 10
+    assert lead_bins(0.0, dt_s) == 0
+    assert lead_bins(0.002, dt_s) == 2
+    assert lag_offset_bins(0.0, 0.0001) == 0
+    assert lag_offset_bins(0.007, 0.0001) == 70
+
+    without = lag_knot_centers_s(100, 6, 0.0001, lag_kind="log_raised_cosine")
+    with_offset = lag_knot_centers_s(
+        100, 6, 0.0001, lag_kind="log_raised_cosine", lag_offset_s=0.007
+    )
+    assert with_offset[0] == pytest.approx(without[0] + 0.007)
+
+    ev_without = signed_event_knot_centers_s(
+        0, 100, 0, 6, lag_kind="log_raised_cosine", lag_offset_s=0.0
+    )
+    ev_offset = signed_event_knot_centers_s(
+        0, 100, 0, 6, lag_kind="log_raised_cosine", lag_offset_s=0.007
+    )
+    assert ev_offset[0] == pytest.approx(ev_without[0] + 0.007)
+
+
+def test_build_signed_temporal_basis_and_delayed_causal_columns() -> None:
+    """Scalar signed-basis helper matches build_basis; lag_offset_bins delays support."""
+    options = RaisedCosineBasisOptions(
+        n_lags=8,
+        n_basis=3,
+        n_leads=2,
+        n_lead_basis=2,
+        lead_s=0.002,
+        lag_offset_s=0.001,
+    )
+    expected = build_basis(options)
+    actual = build_signed_temporal_basis(
+        lag_kind="raised_cosine",
+        n_lags=8,
+        n_basis=3,
+        n_leads=2,
+        n_lead_basis=2,
+        lead_s=0.002,
+        lag_offset_s=0.001,
+    )
+    assert actual.shape == expected.shape
+    np.testing.assert_allclose(actual, expected)
+
+    signal = np.arange(20, dtype=float)
+    basis = build_basis(LogRaisedCosineBasisOptions(n_lags=5, n_basis=1))
+    delayed = causal_basis_columns(signal, basis, lag_offset_bins=3)[0]
+    immediate = causal_basis_columns(signal, basis, lag_offset_bins=0)[0]
+    assert delayed[3] == immediate[0]
+    assert np.all(delayed[:3] == 0.0)

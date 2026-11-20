@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from collections import defaultdict
+from typing import Any, Protocol
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 from matplotlib import colors as mcolors
 from matplotlib.figure import Figure
 from matplotlib.gridspec import SubplotSpec
 from pydantic import BaseModel, Field
+
+
+class ForestTableLike(Protocol):
+    """Column-indexed mapping or DataFrame accepted by :func:`plot_forest`."""
+
+    def __contains__(self, key: str, /) -> bool: ...
+
+    def __getitem__(self, key: str, /) -> Any: ...
 
 
 class ForestColumnSpec(BaseModel):
@@ -54,9 +62,18 @@ def _lighter_mpl_color(color: str, mix: float = 0.5) -> str:
     return mcolors.to_hex(np.clip(lighter, 0.0, 1.0))
 
 
+def _extract_column_values(data: ForestTableLike, key: str) -> list[Any]:
+    """Materialize one column from a mapping or DataFrame-like table."""
+    col = data[key]
+    to_numpy = getattr(col, "to_numpy", None)
+    if callable(to_numpy):
+        return list(np.asarray(to_numpy()))
+    return list(col)
+
+
 def plot_forest(
     ax: plt.Axes,
-    df: pd.DataFrame,
+    df: ForestTableLike,
     parameter: str,
     title: str,
     ci_level: float = 0.89,
@@ -76,7 +93,8 @@ def plot_forest(
     ax
         Target matplotlib axes.
     df
-        Posterior draws with ``animal``, ``session``, and coefficient column.
+        Posterior draws mapping or DataFrame with ``animal``, ``session``,
+        and coefficient column.
     parameter
         Column name for the coefficient to summarize.
     title
@@ -96,7 +114,7 @@ def plot_forest(
         redrawn with a white-filled open circle marker using the same edge
         colors as peers.
     """
-    if df.empty or parameter not in df.columns:
+    if parameter not in df:
         ax.text(
             0.5,
             0.5,
@@ -109,33 +127,56 @@ def plot_forest(
         ax.set_axis_off()
         return
 
-    if "animal" not in df.columns or "session" not in df.columns:
-        raise ValueError("DataFrame must contain 'animal' and 'session' columns.")
+    param_raw = _extract_column_values(df, parameter)
+    if len(param_raw) == 0:
+        ax.text(
+            0.5,
+            0.5,
+            "No data",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+        )
+        ax.set_title(title)
+        ax.set_axis_off()
+        return
+
+    if "animal" not in df or "session" not in df:
+        raise ValueError(
+            "Table must contain 'animal' and 'session' columns."
+        )
+
+    animals_raw = _extract_column_values(df, "animal")
+    sessions_raw = _extract_column_values(df, "session")
+    if not (len(animals_raw) == len(sessions_raw) == len(param_raw)):
+        raise ValueError(
+            "Columns 'animal', 'session', and parameter must have equal length."
+        )
 
     lower_q = (1.0 - ci_level) / 2.0
     upper_q = 1.0 - lower_q
 
-    grouped = df.groupby(["animal", "session"])
-
-    results: list[dict[str, object]] = []
-    for key, group in grouped:
-        animal, session = cast(tuple[Any, Any], key)
-        samples = group[parameter].dropna().values
-        if len(samples) == 0:
+    grouped: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for animal_val, session_val, sample_val in zip(
+        animals_raw, sessions_raw, param_raw, strict=True
+    ):
+        if sample_val is None:
             continue
+        fval = float(sample_val)
+        if np.isnan(fval):
+            continue
+        grouped[(str(animal_val), str(session_val))].append(fval)
 
-        med = np.median(samples)
-        lower = np.quantile(samples, lower_q)
-        upper = np.quantile(samples, upper_q)
+    results: list[tuple[str, str, str, float, float, float]] = []
+    for animal, session in sorted(grouped):
+        samples = np.asarray(grouped[(animal, session)], dtype=np.float64)
+        if samples.size == 0:
+            continue
+        med = float(np.median(samples))
+        lower = float(np.quantile(samples, lower_q))
+        upper = float(np.quantile(samples, upper_q))
         results.append(
-            {
-                "animal": str(animal),
-                "session": str(session),
-                "label": f"{animal}/{session}",
-                "med": med,
-                "lower": lower,
-                "upper": upper,
-            }
+            (animal, session, f"{animal}/{session}", med, lower, upper)
         )
 
     if not results:
@@ -151,19 +192,21 @@ def plot_forest(
         ax.set_axis_off()
         return
 
-    res_df = pd.DataFrame(results)
-    res_df = res_df.sort_values("med", ascending=True).reset_index(drop=True)
+    results.sort(key=lambda row: row[3])
+    n = len(results)
+    y_pos = np.arange(n)
+    animals_sorted = np.array([row[0] for row in results], dtype=object)
+    sessions_sorted = np.array([row[1] for row in results], dtype=object)
+    labels_sorted = [row[2] for row in results]
+    medians = np.array([row[3] for row in results], dtype=np.float64)
+    lowers = np.array([row[4] for row in results], dtype=np.float64)
+    uppers = np.array([row[5] for row in results], dtype=np.float64)
 
-    y_pos = np.arange(len(res_df))
-    medians = res_df["med"].values
-    lowers = res_df["lower"].values
-    uppers = res_df["upper"].values
-
-    highlight_mask = np.zeros(len(res_df), dtype=bool)
+    highlight_mask = np.zeros(n, dtype=bool)
     if highlight is not None:
-        highlight_mask = (res_df["animal"].astype(str) == str(highlight.animal)).to_numpy() & (
-            res_df["session"].astype(str) == str(highlight.session)
-        ).to_numpy()
+        highlight_mask = (animals_sorted == str(highlight.animal)) & (
+            sessions_sorted == str(highlight.session)
+        )
 
     baseline_mask = ~highlight_mask
     if np.any(baseline_mask):
@@ -219,7 +262,6 @@ def plot_forest(
     limit_val = max_abs_val * 1.1
     ax.set_xlim(-limit_val, limit_val)
 
-    n = len(res_df)
     if neuron_id_axis:
         ax.set_ylabel("Neuron ID")
         if n == 1:
@@ -234,9 +276,8 @@ def plot_forest(
         ax.spines["left"].set_bounds(0.0, max(0.0, float(n - 1)))
         ax.tick_params(axis="y", length=3)
     else:
-        labels = res_df["label"].values
         ax.set_yticks(y_pos)
-        ax.set_yticklabels(labels)
+        ax.set_yticklabels(labels_sorted)
         ax.spines["left"].set_visible(False)
         ax.tick_params(axis="y", length=0)
 
@@ -250,7 +291,7 @@ def plot_forest(
 def draw_forest_grid(
     fig: Figure,
     cell: SubplotSpec,
-    df: pd.DataFrame,
+    df: ForestTableLike,
     options: ForestGridOptions,
 ) -> list[plt.Axes]:
     """Draw a generic N-column forest plot grid.
