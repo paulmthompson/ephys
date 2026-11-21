@@ -735,3 +735,64 @@ def collect_first_spike_jitter_ms(
         return None
     arr = np.asarray(first_ms, dtype=np.float64)
     return arr - float(np.median(arr))
+
+
+def merge_spikes_chunk(chunk: Sequence[np.ndarray]) -> np.ndarray:
+    """Concatenate spike times from consecutive trials into one raster row.
+
+    Empty trials are skipped; if all are empty, returns an empty float array.
+
+    Parameters
+    ----------
+    chunk
+        Spike arrays for consecutive trials to merge into a single row.
+
+    Returns
+    -------
+    np.ndarray
+        1-D spike times (concatenated), dtype ``float64``.
+    """
+    parts = [
+        np.asarray(x, dtype=np.float64).ravel()
+        for x in chunk
+        if np.asarray(x).size > 0
+    ]
+    if not parts:
+        return np.array([], dtype=np.float64)
+    return np.concatenate(parts)
+
+
+def bin_spike_lists(
+    spike_lists: list[np.ndarray],
+    trials_per_bin: int,
+) -> list[np.ndarray]:
+    """Collapse consecutive trials into fewer rows (spikes overlaid per row).
+
+    Parameters
+    ----------
+    spike_lists
+        One spike array per trial row, in display order.
+    trials_per_bin
+        Number of consecutive trials merged into each output row; must be >= 1.
+
+    Returns
+    -------
+    list[np.ndarray]
+        Shorter list where each element is from :func:`merge_spikes_chunk` over
+        a slice of ``spike_lists``.
+
+    Raises
+    ------
+    ValueError
+        If ``trials_per_bin < 1``.
+    """
+    if trials_per_bin < 1:
+        raise ValueError(
+            f"trials_per_bin must be >= 1, got {trials_per_bin}"
+        )
+    if trials_per_bin == 1:
+        return spike_lists
+    out: list[np.ndarray] = []
+    for i in range(0, len(spike_lists), trials_per_bin):
+        out.append(merge_spikes_chunk(spike_lists[i : i + trials_per_bin]))
+    return out

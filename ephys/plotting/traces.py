@@ -19,7 +19,7 @@ Summary of functionality:
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import matplotlib.axes
@@ -31,6 +31,96 @@ from matplotlib.transforms import Transform, blended_transform_factory
 from pydantic import BaseModel
 
 from ephys.processing.envelope import get_min_max_envelope
+
+
+class StimulusIntervalStyle(BaseModel):
+    """Visual styling for horizontal stimulus epoch bars.
+
+    Parameters
+    ----------
+    facecolor
+        Fill color for each interval span.
+    edgecolor
+        Border stroke color for each interval span.
+    alpha
+        Opacity in ``[0, 1]``.
+    linewidth
+        Border stroke width in typographic points.
+    """
+
+    model_config = {"frozen": True}
+
+    facecolor: str = "gray"
+    edgecolor: str = "none"
+    alpha: float = 1.0
+    linewidth: float = 0.0
+
+
+DEFAULT_STIMULUS_INTERVAL_STYLE = StimulusIntervalStyle()
+
+
+def plot_stimulus_intervals(
+    ax: Axes,
+    intervals_s: np.ndarray | Sequence[tuple[float, float]],
+    xlim_s: tuple[float, float],
+    *,
+    style: StimulusIntervalStyle | None = None,
+    turn_axis_off: bool = True,
+) -> None:
+    """Draw horizontal stimulus epoch spans on ``ax`` from ``(onset, offset)`` pairs.
+
+    Parameters
+    ----------
+    ax
+        Target Matplotlib axes.
+    intervals_s
+        Sequence of ``(onset_s, offset_s)`` pairs or a 2D array of shape
+        ``(N, 2)`` in seconds. Empty sequences draw a blank strip with
+        ``xlim_s`` applied.
+    xlim_s
+        ``(t_min_s, t_max_s)`` horizontal axis limits in seconds.
+    style
+        Visual options for ``ax.axvspan``. Defaults to
+        :data:`DEFAULT_STIMULUS_INTERVAL_STYLE`.
+    turn_axis_off
+        When ``True``, call ``ax.axis("off")`` after setting ``xlim_s``.
+
+    Raises
+    ------
+    ValueError
+        If ``xlim_s[1] < xlim_s[0]``, if non-empty ``intervals_s`` cannot be
+        reshaped as ``(N, 2)``, or if any interval has ``offset_s < onset_s``.
+    """
+    t0, t1 = float(xlim_s[0]), float(xlim_s[1])
+    if t1 < t0:
+        raise ValueError(f"xlim_s must satisfy t_max >= t_min, got {xlim_s!r}")
+
+    arr = np.asarray(intervals_s, dtype=np.float64)
+    if arr.size == 0:
+        pairs = np.empty((0, 2), dtype=np.float64)
+    elif arr.ndim == 2 and arr.shape[1] == 2:
+        pairs = arr
+    else:
+        raise ValueError(
+            f"intervals_s must have shape (N, 2) when non-empty, got {arr.shape!r}"
+        )
+
+    if pairs.size > 0 and np.any(pairs[:, 1] < pairs[:, 0]):
+        raise ValueError("intervals_s must satisfy offset_s >= onset_s for every row")
+
+    resolved = style or DEFAULT_STIMULUS_INTERVAL_STYLE
+    for onset_s, offset_s in pairs:
+        ax.axvspan(
+            float(onset_s),
+            float(offset_s),
+            facecolor=resolved.facecolor,
+            edgecolor=resolved.edgecolor,
+            alpha=resolved.alpha,
+            linewidth=resolved.linewidth,
+        )
+    ax.set_xlim(t0, t1)
+    if turn_axis_off:
+        ax.axis("off")
 
 
 def _plot_scale_bar_stroke(
@@ -230,10 +320,9 @@ def populate_stim_trace_margin_slot(
         If set, drawn with :func:`draw_margin_strip_label` on
         ``slot.ax_strip_label``.
     draw_stimulus
-        If set, called as ``draw_stimulus(slot.ax_strip)``. Use
-        :func:`figures.plotting.stimuli.plot_contact_stimulus`,
-        :func:`figures.plotting.stimuli.plot_laser_stimulus`, or a lambda that
-        closes over paths and index windows.
+        If set, called as ``draw_stimulus(slot.ax_strip)`` (for example, a
+        callable wrapping :func:`plot_stimulus_intervals` over pre-loaded
+        interval bounds).
     fs, bin_size
         Passed to :func:`plot_voltage_trace`.
     """
