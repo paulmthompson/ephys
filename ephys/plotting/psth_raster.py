@@ -196,6 +196,8 @@ def plot_raster(
             msg = "lineoffsets length must match number of trials"
             raise ValueError(msg)
 
+    from matplotlib.collections import EventCollection
+
     event_collections = ax.eventplot(
         spike_times_per_trial_s,
         color="black",
@@ -204,8 +206,11 @@ def plot_raster(
         lineoffsets=list(lo),
         orientation="horizontal",
     )
-    for coll in event_collections:
-        coll.set_zorder(event_zorder)
+    if isinstance(event_collections, EventCollection):
+        event_collections.set_zorder(event_zorder)
+    else:
+        for coll in event_collections:
+            coll.set_zorder(event_zorder)
 
     ax.set_xlim(t_start_s, t_end_s)
     if lo.size == 0:

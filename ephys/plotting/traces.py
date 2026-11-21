@@ -150,8 +150,10 @@ def _plot_scale_bar_stroke(
 def _resolved_scale_bar_linewidth_pt(ax: Axes, s: VoltageTraceOptions) -> float:
     """Return scale-bar ``linewidth`` in Matplotlib points for ``ax``."""
     if s.scale_bar_linewidth_figheight_frac is not None:
-        fig = ax.figure
-        return float(s.scale_bar_linewidth_figheight_frac * fig.get_figheight() * 72.0)
+        fig = ax.figure if isinstance(ax.figure, Figure) else ax.figure.figure
+        return float(
+            s.scale_bar_linewidth_figheight_frac * fig.get_figheight() * 72.0
+        )
     return float(s.scale_bar_linewidth_pt)
 
 

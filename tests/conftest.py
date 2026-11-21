@@ -163,3 +163,12 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 def _allow_pytest_basetemp(tmp_path_factory: pytest.TempPathFactory) -> None:
     """Ensure custom ``--basetemp`` directories remain writable."""
     _register_allowed_root(tmp_path_factory.getbasetemp())
+
+
+@pytest.fixture(autouse=True)
+def _close_matplotlib_figures():
+    """Close any open Matplotlib figures after each test."""
+    yield
+    plt_mod = sys.modules.get("matplotlib.pyplot")
+    if plt_mod is not None:
+        plt_mod.close("all")

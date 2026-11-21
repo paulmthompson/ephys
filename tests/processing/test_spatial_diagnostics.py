@@ -40,6 +40,7 @@ def test_common_mode_has_high_off_diagonal_correlation() -> None:
     diagnostics = compute_spatial_diagnostics(voltage, np.arange(4), indices)
     assert diagnostics.mean_abs_off_diag_corr > 0.8
     assert diagnostics.dominant_eigenvalue_fraction > 0.6
+    assert diagnostics.pc1_median_correlation is not None
     assert abs(diagnostics.pc1_median_correlation) > 0.9
 
 

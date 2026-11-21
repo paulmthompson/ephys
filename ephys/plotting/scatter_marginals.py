@@ -262,15 +262,15 @@ def align_marginal_axes_to_scatter(
     top_pos = ax_top.get_position()
     strip_thickness = top_pos.height
     ax_top.set_position(
-        [scatter_pos.x0, top_pos.y0, scatter_pos.width, strip_thickness],
+        (scatter_pos.x0, top_pos.y0, scatter_pos.width, strip_thickness),
     )
     ax_right.set_position(
-        [
+        (
             scatter_pos.x0 + scatter_pos.width,
             scatter_pos.y0,
             strip_thickness,
             scatter_pos.height,
-        ],
+        ),
     )
 
 
@@ -299,8 +299,9 @@ def _limits_are_equal(
     hi_y: float,
 ) -> bool:
     """True when scatter x and y share the same numeric limits."""
-    return np.isclose(lo_x, lo_y, rtol=0.0, atol=1e-12) and np.isclose(
-        hi_x, hi_y, rtol=0.0, atol=1e-12
+    return bool(
+        np.isclose(lo_x, lo_y, rtol=0.0, atol=1e-12)
+        and np.isclose(hi_x, hi_y, rtol=0.0, atol=1e-12)
     )
 
 
@@ -444,13 +445,14 @@ def _draw_diff_inset_axis(
         d_hi += width
     x0, y0 = diff_inset_xy_for_difference(d_lo, diagonal_pos)
     x1, y1 = diff_inset_xy_for_difference(d_hi, diagonal_pos)
-    axis_kw = {
-        "color": "0.35",
-        "linewidth": 0.9,
-        "zorder": 5,
-        "clip_on": False,
-    }
-    ax.plot([x0, x1], [y0, y1], **axis_kw)
+    ax.plot(
+        [x0, x1],
+        [y0, y1],
+        color="0.35",
+        linewidth=0.9,
+        zorder=5,
+        clip_on=False,
+    )
     if not show_xtick_labels:
         return
     scale = float(count_extent) if count_extent is not None else ext * 0.2
@@ -462,7 +464,10 @@ def _draw_diff_inset_axis(
         ax.plot(
             [px - tick[0], px + tick[0]],
             [py - tick[1], py + tick[1]],
-            **axis_kw,
+            color="0.35",
+            linewidth=0.9,
+            zorder=5,
+            clip_on=False,
         )
         lx = px + label_shift[0]
         ly = py + label_shift[1]

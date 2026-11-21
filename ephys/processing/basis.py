@@ -781,17 +781,27 @@ def build_signed_temporal_basis(
     np.ndarray
         Signed temporal basis matrix; see :func:`build_basis`.
     """
-    common = {
-        "n_lags": n_lags,
-        "n_basis": n_basis,
-        "n_leads": n_leads,
-        "n_lead_basis": n_lead_basis,
-        "lead_s": lead_s,
-        "lag_offset_s": lag_offset_s,
-    }
     if lag_kind == "raised_cosine":
-        return build_basis(RaisedCosineBasisOptions(**common))
-    return build_basis(LogRaisedCosineBasisOptions(**common))
+        return build_basis(
+            RaisedCosineBasisOptions(
+                n_lags=n_lags,
+                n_basis=n_basis,
+                n_leads=n_leads,
+                n_lead_basis=n_lead_basis,
+                lead_s=lead_s,
+                lag_offset_s=lag_offset_s,
+            )
+        )
+    return build_basis(
+        LogRaisedCosineBasisOptions(
+            n_lags=n_lags,
+            n_basis=n_basis,
+            n_leads=n_leads,
+            n_lead_basis=n_lead_basis,
+            lead_s=lead_s,
+            lag_offset_s=lag_offset_s,
+        )
+    )
 
 
 def acausal_basis_columns(

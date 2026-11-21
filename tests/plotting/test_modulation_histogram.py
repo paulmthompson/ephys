@@ -68,7 +68,7 @@ def test_draw_modulation_histogram_into_creates_axes() -> None:
     assert ax.get_xscale() == "linear"
     assert len(ax.lines) == 1
     assert ax.lines[0].get_linestyle() == "--"
-    assert ax.lines[0].get_xdata()[0] == 0.0
+    assert np.asarray(ax.lines[0].get_xdata(), dtype=float)[0] == 0.0
     plt.close(fig)
 
 
