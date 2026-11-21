@@ -4,19 +4,28 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 
+TripleSpikeIsiContrastMode = Literal["absolute", "relative_diff"]
+
 __all__ = [
     "TrialCv2Summary",
+    "TripleSpikeIsiContrastMode",
     "adjacent_isi_cv2",
     "bootstrap_median_ci_by_trial",
     "collect_adjacent_isi_cv2",
     "collect_adjacent_isi_cv2_by_trial",
     "collect_inter_spike_intervals",
+    "collect_triple_spike_isi_diff_ms",
+    "first_three_spike_isi_pair_ms",
+    "first_two_spike_isi",
     "flatten_finite_trial_values",
     "inter_spike_intervals",
     "summarize_trial_cv2",
+    "triple_spike_isi_contrast_from_pair_ms",
+    "triple_spike_isi_pairs_ms",
 ]
 
 
@@ -259,3 +268,151 @@ def summarize_trial_cv2(
         ci_low=ci_low,
         ci_high=ci_high,
     )
+
+
+def first_two_spike_isi(rel_s: np.ndarray) -> float:
+    """Return ISI between the first two spikes in a trial window (seconds).
+
+    Parameters
+    ----------
+    rel_s
+        Spike times in seconds relative to event onset, sorted ascending.
+
+    Returns
+    -------
+    float
+        ``rel_s[1] - rel_s[0]`` when at least two spikes are present;
+        otherwise ``nan``.
+    """
+    spikes = np.asarray(rel_s, dtype=np.float64).ravel()
+    if spikes.size < 2:
+        return float("nan")
+    return float(spikes[1] - spikes[0])
+
+
+def first_three_spike_isi_pair_ms(rel_s: np.ndarray) -> tuple[float, float]:
+    """Return ISIs (ms) between the first three spikes in a trial window.
+
+    Parameters
+    ----------
+    rel_s
+        Spike times in seconds relative to event onset.
+
+    Returns
+    -------
+    tuple[float, float]
+        ``(isi_12_ms, isi_23_ms)`` when at least three spikes are present;
+        otherwise ``(nan, nan)``.
+    """
+    spikes = np.sort(np.asarray(rel_s, dtype=np.float64).ravel(), kind="mergesort")
+    if spikes.size < 3:
+        return float("nan"), float("nan")
+    isi_12_ms = float(spikes[1] - spikes[0]) * 1000.0
+    isi_23_ms = float(spikes[2] - spikes[1]) * 1000.0
+    return isi_12_ms, isi_23_ms
+
+
+def triple_spike_isi_pairs_ms(
+    spike_times_per_trial_s: Sequence[np.ndarray],
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Collect per-trial ``(isi_12_ms, isi_23_ms)`` arrays across trials.
+
+    Parameters
+    ----------
+    spike_times_per_trial_s
+        Per-trial spike-time arrays in seconds relative to event onset.
+
+    Returns
+    -------
+    tuple[numpy.ndarray, numpy.ndarray] or None
+        ``(isi_12_ms, isi_23_ms)`` for trials with at least three spikes, or
+        ``None`` when no trial qualifies.
+    """
+    isi_12: list[float] = []
+    isi_23: list[float] = []
+    for trial in spike_times_per_trial_s:
+        pair = first_three_spike_isi_pair_ms(trial)
+        if not np.isfinite(pair[0]) or not np.isfinite(pair[1]):
+            continue
+        isi_12.append(pair[0])
+        isi_23.append(pair[1])
+    if not isi_12:
+        return None
+    return np.asarray(isi_12, dtype=np.float64), np.asarray(isi_23, dtype=np.float64)
+
+
+def triple_spike_isi_contrast_from_pair_ms(
+    isi_12_ms: float,
+    isi_23_ms: float,
+    *,
+    mode: TripleSpikeIsiContrastMode = "absolute",
+) -> float:
+    """Return triple-spike ISI contrast for one trial.
+
+    Parameters
+    ----------
+    isi_12_ms, isi_23_ms
+        First and second inter-spike intervals in milliseconds.
+    mode
+        ``"absolute"`` returns ``isi_23_ms - isi_12_ms``; ``"relative_diff"``
+        divides that difference by ``mean(isi_12_ms, isi_23_ms)``.
+
+    Returns
+    -------
+    float
+        Contrast value, or ``nan`` when inputs are non-finite or the mean ISI
+        is non-positive in ``"relative_diff"`` mode.
+
+    Raises
+    ------
+    ValueError
+        If ``mode`` is unsupported.
+    """
+    if not np.isfinite(isi_12_ms) or not np.isfinite(isi_23_ms):
+        return float("nan")
+    diff_ms = float(isi_23_ms) - float(isi_12_ms)
+    if mode == "absolute":
+        return diff_ms
+    if mode == "relative_diff":
+        mean_isi_ms = 0.5 * (float(isi_12_ms) + float(isi_23_ms))
+        if mean_isi_ms <= 0.0:
+            return float("nan")
+        return diff_ms / mean_isi_ms
+    msg = f"unsupported triple-spike ISI contrast mode: {mode!r}"
+    raise ValueError(msg)
+
+
+def collect_triple_spike_isi_diff_ms(
+    spike_times_per_trial_s: Sequence[np.ndarray],
+    *,
+    mode: TripleSpikeIsiContrastMode = "absolute",
+) -> np.ndarray | None:
+    """Collect triple-spike ISI contrast across trials with >= 3 spikes.
+
+    Parameters
+    ----------
+    spike_times_per_trial_s
+        Per-trial spike-time arrays in seconds relative to event onset.
+    mode
+        ``"absolute"`` or ``"relative_diff"``.
+
+    Returns
+    -------
+    numpy.ndarray or None
+        1D ``float64`` contrast values, or ``None`` when no trial qualifies.
+    """
+    pairs = triple_spike_isi_pairs_ms(spike_times_per_trial_s)
+    if pairs is None:
+        return None
+    contrasts: list[float] = []
+    for isi_12_ms, isi_23_ms in zip(pairs[0], pairs[1], strict=True):
+        value = triple_spike_isi_contrast_from_pair_ms(
+            float(isi_12_ms),
+            float(isi_23_ms),
+            mode=mode,
+        )
+        if np.isfinite(value):
+            contrasts.append(value)
+    if not contrasts:
+        return None
+    return np.asarray(contrasts, dtype=np.float64)

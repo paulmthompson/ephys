@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 import pytest
 
@@ -12,9 +14,14 @@ from ephys.processing.spike_intervals import (
     collect_adjacent_isi_cv2,
     collect_adjacent_isi_cv2_by_trial,
     collect_inter_spike_intervals,
+    collect_triple_spike_isi_diff_ms,
+    first_three_spike_isi_pair_ms,
+    first_two_spike_isi,
     flatten_finite_trial_values,
     inter_spike_intervals,
     summarize_trial_cv2,
+    triple_spike_isi_contrast_from_pair_ms,
+    triple_spike_isi_pairs_ms,
 )
 
 
@@ -115,4 +122,36 @@ def test_summarize_trial_cv2_and_bootstrap_ci() -> None:
     with pytest.raises(ValueError, match="ci_level"):
         bootstrap_median_ci_by_trial(
             trials, rng=np.random.default_rng(0), n_bootstrap=10, ci_level=1.0
+        )
+
+
+def test_first_two_and_triple_spike_isi_helpers() -> None:
+    """Compute first-two ISI, triple-spike pairs, and absolute/relative contrasts."""
+    assert np.isnan(first_two_spike_isi(np.array([0.01], dtype=np.float64)))
+    assert first_two_spike_isi(np.array([0.01, 0.014], dtype=np.float64)) == pytest.approx(0.004)
+
+    p_short = first_three_spike_isi_pair_ms(np.array([0.01, 0.02], dtype=np.float64))
+    assert np.isnan(p_short[0]) and np.isnan(p_short[1])
+    assert first_three_spike_isi_pair_ms(
+        np.array([0.019, 0.010, 0.014], dtype=np.float64)
+    ) == pytest.approx((4.0, 5.0))
+
+    trials = (
+        np.array([0.010, 0.014, 0.020], dtype=np.float64),
+        np.array([0.010, 0.020], dtype=np.float64),
+    )
+    pairs = triple_spike_isi_pairs_ms(trials)
+    assert pairs is not None
+    assert pairs[0].tolist() == pytest.approx([4.0])
+    assert pairs[1].tolist() == pytest.approx([6.0])
+    assert triple_spike_isi_pairs_ms((np.array([0.01], dtype=np.float64),)) is None
+
+    diff_abs = collect_triple_spike_isi_diff_ms(trials, mode="absolute")
+    diff_rel = collect_triple_spike_isi_diff_ms(trials, mode="relative_diff")
+    assert diff_abs is not None and diff_abs.tolist() == pytest.approx([2.0])
+    assert diff_rel is not None and diff_rel.tolist() == pytest.approx([0.4])
+
+    with pytest.raises(ValueError, match="unsupported"):
+        triple_spike_isi_contrast_from_pair_ms(
+            2.0, 4.0, mode=cast(Any, "bad")
         )
